@@ -2,8 +2,8 @@ Source: atari800
 Section: contrib/otherosfs
 Priority: optional
 Maintainer: Antonin Kral <A.Kral@sh.cvut.cz>
-Build-Depends: libx11-dev, libxext-dev, libxt-dev, x-dev, libsdl1.2-dev, libncurses-dev, zlib1g-dev, libreadline5-dev
-Standards-Version: 3.7.2
+Build-Depends: libx11-dev, libxext-dev, libxt-dev, x11proto-core-dev, libsdl1.2-dev, libncurses-dev, zlib1g-dev, libreadline-dev, libpng12-dev, autotools-dev
+Standards-Version: 3.8.3
 
 Package: atari800
 Architecture: any
