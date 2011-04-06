@@ -1,3 +1,388 @@
+** 2.2.0 released on 2011-04-02 at Atariada in Prostejov
+
+2011-04-02  Petr Stehlik <pstehlik@sophics.cz>
+  Commiting patches submitted by Tomasz Krasuski <tomasz.krasuski@interia.pl>
+  and Achim Haertel <aha_33@t-online.de>:
+* many files: Tomasz Krasuski's large patch that adds a new control to the GUI,
+  a slider which allows to adjust a numeric value using left and right arrows.
+  The slider is used in the colour controls (brightness, contrast etc.) and in
+  NTSC Filter settings. The colour/palette settings and NTSC Filter settings
+  are now saved in the config file. Color handling in UI got better names:
+  "Color preset", "Standard", "Deep" and "Vibrant".
+  Added the option "Filter preset" to Display settings->NTSC Filter settings.
+  This option allows to adjust several presets for the NTSC filter: 
+  Composite, S-Video, RGB and Monochrome. Previously this option was available 
+  only as a keyboard shortcut in the SDL port. Also see -ntsc-filter-preset in 
+  the command line.
+  Added a new function PreInitialise() that is intended to contain any
+  initialisation code that needs to be called before reading of the config file.
+  Fixed a few compilation errors and warnings for the MSVC build, and slightly
+  updated the build instructions. As a bonus, the colour/palette adjustments
+  are now also available in the DirectX port.
+  Simplified the code for processing Win32-specific hotkeys. Now there's less
+  platfrom-specific code scattered around. Functionality remains unchanged.
+
+* monitor.c: Achim Haertel's patch adds a minor change to the monitor:
+  BPC without argument shows now the current breakpoint location.
+
+* atari800.spec: X11 and ncurses dropped. libGL should be added
+  as a recommended library.
+
+* README.1ST, README, ChangeLog, NEWS, util/export: updated for a new release
+
+* sdl/video_sw.c: disabled an annoying debug print
+
+
+2011-04-02  Kostas Nakos  <knakos@gmail.com>
+* android/*: Implement a simple disk management menu
+* ui.c: Rearranged an #include to silence a redefinition warning
+
+
+2011-03-19  Kostas Nakos  <knakos@gmail.com>
+* android/*: Map dpad-center and ~ to Atari's escape key,
+             fix a couple of races when restarting, pausing/resuming the audio
+
+
+2011-03-06  Kostas Nakos  <knakos@gmail.com>
+* atari.[ch], android/*: Implemented autoframeskip functionality
+* android/*: Added .com & .exe to supported extensions,
+             bugfix crash when sound disabled,
+			 added new joystick grace area preference 
+
+
+2011-02-13  Kostas Nakos  <knakos@gmail.com>
+* log.c, atari.c, screen.c, configure.ac, Makefile.in, android/*: Imported the
+  android port
+* antic.c: Fix dirty screen updates with WORDS_UNALIGNED_OK
+
+
+2010-12-09  James Wilkinson  <james@slor.net>
+* af80.c: prevent extra carriage return in config file setting.
+
+
+2010-11-25  Petr Stehlik <pstehlik@sophics.cz>
+* cartridge.c, cassette.c, cfg.c, devices.c, monitor.c, pbi_scsi.c, sio.c,
+  sound_oss.c, statesav.c, ui.c: GCC warnings about unused results fixed
+  (mostly return values of fread() and similar libc functions).
+
+* atari.c: fixed benchmarking with SDL (DONT_DISPLAY)
+
+
+2010-11-24  Petr Stehlik <pstehlik@sophics.cz>
+* many files: Tomasz Krasuski's large patch that implements major SDL video
+  output improvements - see "Display settings" -> "Video mode settings".
+
+* util.c: fixed Util_stricmp() implementation (was broken for empty strings)
+
+
+2010-11-23  Petr Stehlik <pstehlik@sophics.cz>
+* configure.ac: Matthias Reichl's patches for cross-compilation of the Windows
+  version under Debian. Use as follows:
+    PATH="/opt/mingw/SDL-1.2.14/bin:${PATH}" \
+    CPPFLAGS="-I/opt/mingw/libz-1.2.5/include" \
+    LDFLAGS="-L/opt/mingw/libz-1.2.5/lib" \
+    ./configure --target=sdl --host=i586-mingw32msvc
+
+* ui.c: Tomasz Krasuski's patch for hiding proper Display entries in PAL mode
+
+* configure.ac: Tomasz Krasuski's patch for termcap being available in other
+  libraries (readline, ncurses)
+
+
+2010-10-05  James Wilkinson  <james@slor.net>
+* ui_basic.c: change #ifdef to DIRECTX for DoEvents() call (thanks Matthias)
+
+
+2010-05-24  Petr Stehlik <pstehlik@sophics.cz>
+* atari.c, cartridge.c, configure.ac, Makefile.in: make IDE emulation optional
+  though enabled by default (use --disable-ide configure option if it doesn't
+  compile on your platform)
+
+* colours_ntsc.c: fixed missing default return
+
+* atari.h: version increased to 2.2.0rc1
+
+* atari800.spec, README.1ST, DOC/NEWS: updated for upcoming release
+
+
+2010-05-17  Petr Stehlik <pstehlik@sophics.cz>
+* colours.c: write file in binary mode (thanks Tomasz Krasuski for the patch)
+* ide.c: read file in binary mode
+* data folder added
+* icon files moved from util to data folder
+* atari2.svg and atari2.png added to data folder (credits to John Oyler,
+  thanks to Brian Watson)
+
+
+2010-04-30  James Wilkinson  <james@slor.net>
+* akey.h, atari.c, colours.[ch], colours_ntsc.[ch], colours_pal.c, configure.ac,
+  ui.[ch], ui_basic.[ch], win32/atari_win32.[ch], win32/main.cpp, win32/main.h,
+  win32/main_menu.h, win32/render_direct3d.cpp, win32/render_direct3d.h,
+  win32/render_gdi.c, win32/render_gdiplus.cpp, win32/screen_win32.[ch],
+  DOC/directx.txt:
+  Committed DirectX display enhancements by David Dahlstrom <ddahlstrom@charter.net>
+
+
+2010-04-29  James Wilkinson  <james@slor.net>
+* Makefile.in: switched to patsubst long form in win32 rule because compound short form did not work as expected with at least some compilers
+
+* win32/atari_win32.h: corrected prototype to remove compiler warning
+
+
+2010-04-28  James Wilkinson  <james@slor.net>
+* ide.[ch], ide_internal.h: build fixes for Windows/BeOS/DOS fseek/ftell and compiler complaints
+
+
+2010-04-27  Ivo van Poorten  <ivop@euronet.nl>
+Implementation of both 8- and 16-bit IDE. If the MSB's are ignored, 
+the interface is compatible with MyIDE (tested mainly with MYIDE44E.ROM).
+Some advanced features, like SMART and DVD/CDROM support, are not there yet, 
+but this is more than enough to write and test low level IDE Microdrive/CF 
+code. For harddisks it might be beneficial to emulate a couple of busy cycles.
+
+
+2010-04-26  James Wilkinson  <james@slor.net>
+* ui.c: corrected H: error caused by turbo patch
+
+* atari.c, colours.c: correct blank screen on platforms that do not support palette update
+
+* atari_sdl.c, sound_oss.c: improve turbo mode for SDL build with synchronized sound and OSS sound
+
+
+2010-04-20  James Wilkinson  <james@slor.net>
+* atari.c, monitor.[ch] DOC/trainer.txt: committed trainer searcher by Achim Haertel.
+
+* atari.[ch], ui.c: committed savestate sound patch by Tomasz Krasuski.
+
+
+2010-04-19  James Wilkinson  <james@slor.net>
+* akey.h, atari.[ch], atari_sdl.c, atari_x11.c, ui.c, dos/atari_vga.c, win32/atari_win32.c:
+  Added support for F12 turbo mode.
+
+* win32/joystick.c: do not stop joystick enumeration on dual stick settings failure
+
+* emuos.h, emuos.lis: update for 2010
+
+* win32/atari_win32.h, win32/keyboard.c: DirectInput cleanup
+
+
+2010-04-16  James Wilkinson  <james@slor.net>
+* win32/atari_win32.c: correct keystroke auto-repeat
+
+
+2010-03-23  Perry McFarlane  <perry_m@fastmail.fm>
+* DOC/USAGE, atari.c, configure.ac, mzpokeysnd.c, pbi.c, pbi_xld.[ch],
+pokey.c, pokeysnd.c, votrax.c, new files: voicebox.[ch], votraxsnd.[ch]:
+emulate the Alien Group Voice Box I and II
+
+
+2010-01-29  Piotr Fusik  <fox@scene.pl>
+* ui.h, ui_basic.c: changed source code from CRLF to LF
+
+
+2010-01-27  Perry McFarlane  <perry_m@fastmail.fm>
+* af80.[ch], atari.c: fix coldstart for AF80.
+
+
+2010-01-21  James Wilkinson  <james@slor.net>
+* win32/render_direct3d.cpp: disable extended functions if supporting runtime not installed.
+
+* configure.ac: remove dependency on libd3dx9.
+
+
+2010-01-19  James Wilkinson  <james@slor.net>
+* pbi_proto80.c: prevent extra carriage return in config file setting.
+
+* win32/sound.c: don't try to reinit sound (causes crash) if -nosound was used.
+
+
+2010-01-18  James Wilkinson  <james@slor.net>
+* ui.[ch], win32/atari_win32.c, win32/render_direct3d.*, win32/render_gdi.c, win32/render_gdiplus.cpp, win32/screen_win32.[ch]:
+  Committed updated DirectX display enhancements from David Dahlstrom.
+
+* pbi_bb.c, pbi_mio.c, pbi_xld.c: prevent extra carriage returns in config file rom settings.
+
+
+2010-01-17  James Wilkinson  <james@slor.net>
+* configure.ac: define SUPPORTS_PLATFORM_CONFIGSAVE and SUPPORTS_PLATFORM_CONFIGURE for DirectX build.
+
+
+2010-01-14  Piotr Fusik  <fox@scene.pl>
+* win32/msc/config.h: #define WIN32 -> HAVE_WINDOWS_H
+
+* win32/render_gdi.obj: was incidentally committed
+
+
+2010-01-13  James Wilkinson  <james@slor.net>
+* configure.ac: removed -Wredundant-decls for BeOS
+
+* configure.ac, ui.c, win32/render_*.*, win32/screen_win32.[ch], win32/main.*:
+  Changes to support new DirectX code under gcc.
+
+* configure.ac, atari.[ch], atari_sdl.c, compfile.c, devices.c, platform.h, pokey.c, rdevice.c, rtime.c, ui.[ch], ui_basic.c, util.[ch], wince/port/missing.h:
+  Changes from WIN32 to DIRECTX and HAVE_WINDOWS_H definitions.
+
+
+2010-01-12  James Wilkinson  <james@slor.net>
+* atari_sdl.c:
+  Committed patch by Tomaz Krasuski to fix DirectX default for Win32 SDL driver.
+  Also made change to correct garbage column in some scaling modes.
+
+
+2010-01-10  Piotr Fusik  <fox@scene.pl>
+* util/colormix.asx, util/colormix.xex: program for testing PAL delay line;
+  use arrow keys and space
+
+
+2010-01-07  Piotr Fusik  <fox@scene.pl>
+* ui.c: wrapped UpdateColourControls into ifdef
+
+* colours.c, colours_ntsc.c, colours_pal.c, sio.c: killed MSVC warnings
+
+* win32/msc/config.h, win32/msc/Makefile: updated (colour_ntsc etc.)
+
+  Commiting patch submitted by David Dahlstrom <ddahlstrom@charter.net>
+* platform.h, ui.c, ui.h, ui_basic.c, win32/atari_win32.[ch],
+  win32/joystick.[ch], win32/main.[ch], win32/main.cpp, win32/render_*.*,
+  win32/screen_win32.[ch]: display and controller enhancements
+
+
+2009-12-28  Piotr Fusik  <fox@scene.pl>
+* configure.ac, devices.c: MKDIR_TAKES_ONE_ARG for MinGW
+
+* colours_ntsc.h: M_PI for MinGW
+
+  Commiting patch submitted by Tomasz Krasuski <tomasz.krasuski@interia.pl>
+* DOC/USAGE, atari.c, atari800.man, atari_sdl.c, colours.[ch],
+  colours_external.[ch], colours_ntsc.[ch], colours_pal.[ch] filter_ntsc.[ch],
+  configure.ac, ui.c, atari_ntsc/atari_ntsc.[ch],
+  atari_ntsc/atari_ntsc_config.h, atari_ntsc/atari_ntsc_impl.h:
+  1. Removed Atari800-specific code from the atari_ntsc library, and placed it
+  in a new module, FILTER_NTSC. This new module serves as an interface between
+  Atari800 and Blargg's library.
+  2. Removed the palette generation code from atari_ntsc and placed it in a new
+  module, COLOURS_NTSC. Palette generation is from now on used both in
+  "standard" mode and in NTSC-filtered mode. Old default palettes have been
+  removed from the COLOURS module.
+  3. Introduced a new module, COLOURS_PAL, that includes improved routines for
+  PAL palette generation. PAL Ataris produce colours in a similar way to NTSC
+  ones; the only difference lies in phases of hues in YIQ (or YUV) colourspace.
+  Unfortunately, while differences between hue phases are constant in NTSC,
+  it's not the case in PAL. I have failed in trying to develop a formula that
+  lies behind PAL hue phases, so I gave up on that; instead I measured PAL hue
+  phases based on several screenshots, and stuffed them in the colour_angles
+  table (see colours_pal.c->GeneratePalette()). The result looks very plausible
+  and accurately represents colours of my 65XE, at least.
+  4. Controls for contrast, brightness, saturation, gamma, hue and colordelay
+  now apply to both NTSC and PAL palettes (hue and colordelay only to NTSC),
+  regardless of NTSC filter. Palette generation is now on by default, therefore
+  parameters -genpaln/p are not needed anymore.
+  5. Support for externally-loaded palettes has moved to a new module,
+  COLOURS_EXTERNAL. Brightness, contrast, saturation and gamma can now be
+  applied also to external palettes (-paletten-adjust and -palettep-adjust
+  parameters).
+  6. NTSC filter also supports external palettes.
+  7. Added new and changed a few of existing colour-related command-line
+  parameters.
+  8. Keyboard shortcuts in SDL have been shuffled a bit, so that controls
+  usable only for NTSC filter lie next to each other.
+  9. Display Settings menu has been expanded - now it includes controls for
+  adjusting all colour settings (including NTSC filter settings), and also
+  loading and unloading of external palettes.
+  10. A new functionality has been added - saving the current colours (with
+  adjustments) to a palette file. See Display Settings->Save current palette.
+
+
+2009-12-13  Perry McFarlane  <perry_m@fastmail.fm>
+* /DOC/USAGE, atari_sdl.c, platform.h, ui.c, xep80.c:
+  All 80 column modes work like XEP80 with alt-shift-X to switch screens.
+  Rename PLATFORM_SwitchXep80() to PLATFORM_Switch80(), PLATFORM_xep80 to
+  PLATFORM_show_80.
+
+
+2009-12-07  Perry McFarlane  <perry_m@fastmail.fm>
+* USAGE, af80.[ch], atari.c, atari_sdl.c, cartridge.c, cfg.c, configure.ac,
+cpu.[ch], monitor.c, pbi.c, TODO:
+  Austin Franklin 80 Column card
+  Execution history now stores opcode data.
+  update TODO
+
+
+2009-11-21  Perry McFarlane  <perry_m@fastmail.fm>
+* sio.c: replace random with rand for portability
+  Commiting patch submitted by Tomasz Krasuski <tomasz.krasuski@interia.pl>
+* DOC/USAGE, Makefile.in, atari.c, atari800.man, atari_ntsc.[ch] (removed),
+  atari_ntsc/atari_ntsc.[ch], atari_ntsc/atari_ntsc.config.h,
+  atari_ntsc/atari_ntsc_impl.h, atari_sdl.c, configure.ac:
+  Update to atari_ntsc based on Blargg's nes_ntsc 0.2.2, correct colour phases,
+  other fixes.
+
+
+2009-10-08  Piotr Fusik  <fox@scene.pl>
+  Commiting patch submitted by Tomasz Krasuski <tomasz.krasuski@interia.pl>
+* atari_sdl.c: fixed missing leftmost column in 16bpp and 32bpp modes
+
+
+2009-09-29  Piotr Fusik  <fox@scene.pl>
+* ui.c: sf.net bug #2868897 "Build fails on platforms without sound"
+
+
+2009-09-20  Perry McFarlane  <perry_m@fastmail.fm>
+* atari_sdl.c: fix support of -nosound with SYNCHRONIZED_SOUND
+* Makefile.in: use more memory for javac for javanvm version
+* input.c: remove unused result variable from call to mouse_step() to
+suppress warning.
+* javanvm/atari800.java: fix an issue with the screen sometimes not showing.
+
+
+2009-09-18  Perry McFarlane  <perry_m@fastmail.fm>
+* DOC/BUGS, atari.[ch], atari_sdl.c, cfg.c, configure.ac, mzpokeysnd.[ch],
+pbi_xld.c, platform.h, ui.c USAGE : added synchronized sound for the SDL
+version.
+Sound can now be generated in sync with the rest of the emulation and not in a
+separate thread.  VOL_ONLY_SOUND is no longer needed.  GTIA and POKEY
+digisounds now work properly.  The old pokeysnd.c will not work with
+synchronized sound, only mzpokeysnd will be supported. 16 bit sound is now
+the default for SDL.  Use -audio8 for 8 bit SDL sound.
+Improved mzpokeysnd speed somewhat.
+
+
+2009-08-12  Piotr Fusik  <fox@scene.pl>
+  Commiting a modified patch from Magnus Lind <magli143@gmail.com>
+* input.c: fix for trak-ball (cx22) emulation: bits 0 and 3 keep
+  the last direction
+
+
+2009-07-18  Petr Stehlik <pstehlik@sophics.cz>
+* configure.ac: patch from Patrice Mandin for gemlib autodetection
+
+
+2009-06-30  Piotr Fusik  <fox@scene.pl>
+  Commiting patch submitted by Tomasz Krasuski <tomasz.krasuski@interia.pl>
+* atari_sdl.c, compfile.c: changed "#ifdef linux" to "#ifdef __linux__"
+
+
+2009-04-18  Perry McFarlane  <perry_m@fastmail.fm>
+* sio.c: sio fix broke BINLOAD
+
+
+2009-04-17  Perry McFarlane  <perry_m@fastmail.fm>
+* sio.c: fix sio for AMS music player
+
+
+2009-03-30  Perry McFarlane  <perry_m@fastmail.fm>
+* gtia.c: compile without NEW_CYCLE_EXACT
+
+
+2009-03-30  Petr Stehlik <pstehlik@sophics.cz>
+* atari800.spec: png library added to dependencies.
+
+
+2009-03-27  Piotr Fusik  <fox@scene.pl>
+* win32/atari_win32.c: missing return value in PLATFORM_Initialise
+* win32/.cvsignore: atari.res
+
+
 ** 2.1.0 released on 2009-03-27
 
 2009-03-27  Petr Stehlik <pstehlik@sophics.cz>
@@ -317,12 +702,12 @@ Some spelling in comments corrected.
 
 2008-05-26  Perry McFarlane  <perry_m@fastmail.fm>
 * antic.[ch], atari.[ch], atari_sdl.c, cartridge.h, cassette.c, cpu.h,
-gtia.[ch], javanvm/atari_javanvm.c, mzpokeysnd.c, pbi_bb.c, pbi_mio.c, 
+gtia.[ch], javanvm/atari_javanvm.c, mzpokeysnd.c, pbi_bb.c, pbi_mio.c,
 pbi_scsi.c, pbi_xld.[ch], pia.h, platform.h, pokey.h, rtime.[ch], sio.h,
 statesav.c, ui.c, ui_basic.c, util.[ch], votrax.[ch]:
   I compiled with:
-  CC = gcc -ansi -pedantic -Wall -Waggregate-return -Wmissing-declarations 
-  -Wmissing-prototypes -Wredundant-decls -Wstrict-prototypes -Winline 
+  CC = gcc -ansi -pedantic -Wall -Waggregate-return -Wmissing-declarations
+  -Wmissing-prototypes -Wredundant-decls -Wstrict-prototypes -Winline
   and I found missing headers and lack of static in many places.
   Black Box and MIO will now continue with SCSI disabled if the disk image
   is not found.
@@ -464,7 +849,7 @@ for the Java NestedVM port
 
 
 2007-10-19  Perry McFarlane  <perry_m@fastmail.fm>
-* javanvm/atari_javanvm.c: keypad fix 
+* javanvm/atari_javanvm.c: keypad fix
 
 
 2007-10-18  Perry McFarlane  <perry_m@fastmail.fm>
@@ -527,7 +912,7 @@ for the Java NestedVM port
 
 2007-07-31  Perry McFarlane  <perry_m@fastmail.fm>
 * configure.ac, INSTALL: fix for windows sdl version.  Don't use -mwindows or
-  -Dmain=SDL_main and use -mno-cygwin on Cygwin.  SDL_win32_main.c is now 
+  -Dmain=SDL_main and use -mno-cygwin on Cygwin.  SDL_win32_main.c is now
   required from the sdl source.  Update documentation in INSTALL. This fixes
   the stdout.txt problem.
 

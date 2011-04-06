@@ -34,6 +34,12 @@
 #define AKEY_CX85_NO               -28
 #define AKEY_CX85_DELETE           -29
 #define AKEY_CX85_YES              -30
+#define AKEY_TURBO                 -31
+#ifdef DIRECTX
+	/* special menu directives */
+	#define AKEY32_MENU_SAVE_CONFIG     -107
+	#define AKEY32_UI_MOUSE_CLICK       -108
+#endif
 
 #define AKEY_SHFT 0x40
 #define AKEY_CTRL 0x80

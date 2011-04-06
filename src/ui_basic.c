@@ -2,7 +2,7 @@
  * ui_basic.c - Atari look&feel user interface driver
  *
  * Copyright (C) 1995-1998 David Firth
- * Copyright (C) 1998-2008 Atari800 development team (see DOC/CREDITS)
+ * Copyright (C) 1998-2010 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -39,7 +39,7 @@
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 #include <windows.h>
 #endif
 
@@ -54,6 +54,11 @@
 #include "ui.h"
 #include "util.h"
 
+#ifdef DIRECTX
+	#include "win32\main.h"
+	#include "ui_basic.h"
+#endif
+
 #ifdef USE_CURSES
 extern void curses_clear_screen(void);
 extern void curses_clear_rectangle(int x1, int y1, int x2, int y2);
@@ -62,6 +67,10 @@ extern void curses_putch(int x, int y, int ascii, UBYTE fg, UBYTE bg);
 
 static int initialised = FALSE;
 static UBYTE charset[1024];
+
+#ifdef DIRECTX
+	POINT UI_mouse_click = {-1, -1};
+#endif
 
 const unsigned char UI_BASIC_key_to_ascii[256] =
 {
@@ -98,12 +107,13 @@ static int GetKeyPress(void)
 
 	PLATFORM_DisplayScreen();
 
-	for (;;) {
+	for (;;) {  
 		static int rep = KB_DELAY;
 		if (PLATFORM_Keyboard() == AKEY_NONE) {
 			rep = KB_DELAY;
 			break;
 		}
+		
 		if (rep == 0) {
 			rep = KB_AUTOREPEAT;
 			break;
@@ -112,7 +122,10 @@ static int GetKeyPress(void)
 		Atari800_Sync();
 	}
 
-	do {
+	do { 
+#ifdef DIRECTX
+		DoEvents();
+#endif	
 		Atari800_Sync();
 		keycode = PLATFORM_Keyboard();
 		switch (keycode) {
@@ -126,8 +139,12 @@ static int GetKeyPress(void)
 			UI_alt_function = UI_MENU_EXIT;
 			return 0x1b; /* escape */
 		case AKEY_UI:
-			if (UI_alt_function >= 0) /* Alt+letter, not F1 */
-				return 0x1b; /* escape */
+#ifdef DIRECTX			
+			UI_Run();
+#else	
+			if (UI_alt_function >= 0)  /* Alt+letter, not F1 */
+#endif
+			return 0x1b; /* escape */				
 			break;
 		case AKEY_SCREENSHOT:
 			UI_alt_function = UI_MENU_PCX;
@@ -143,6 +160,34 @@ static int GetKeyPress(void)
 
 	return UI_BASIC_key_to_ascii[keycode];
 }
+
+#ifdef DIRECTX
+/* Convert atari-pixel based mouse click coordinates to simplified
+   UI coordinates consisting of 20 horizontal bands and 2 columns */
+void SetMouseIndex(int x, int y)
+{
+	int yband;
+	
+	/* set the y-band that the user clicked on */
+	yband = y / DX_MENU_ITEM_HEIGHT - 5;
+	if (y < 37 || x > 346 || yband < 0 || yband > 20)
+		UI_mouse_click.y = -1;
+	else
+		UI_mouse_click.y = yband;
+		
+	/* set the x-band that the user clicked on */
+	if (x >= 37 && x < 186)
+		UI_mouse_click.x = 1;
+	else if (x >= 186 && x <= 346)
+		UI_mouse_click.x = 2;
+	else 
+		UI_mouse_click.x = -1;
+		
+	/* set any click outside of any band to -1,-1 */
+	if (UI_mouse_click.x == -1 || UI_mouse_click.y == -1)
+		UI_mouse_click.x = UI_mouse_click.y = -1;
+}
+#endif
 
 static void Plot(int fg, int bg, int ch, int x, int y)
 {
@@ -268,6 +313,17 @@ int GetRawKey(void)
 }
 #endif
 
+#ifdef DIRECTX
+int GetKeyName(void)
+{
+	ClearRectangle(0x94, 13, 11, 25, 13);
+	Box(0x9a, 0x94, 13, 11, 25, 13);
+	CenterPrint(0x94, 0x9a, "Press a key", 12);
+	PLATFORM_DisplayScreen();
+	return PLATFORM_GetKeyName();
+}
+#endif
+
 static int Select(int default_item, int nitems, const char *item[],
                   const char *prefix[], const char *suffix[],
                   const char *tip[], const int nonselectable[],
@@ -385,6 +441,37 @@ static int Select(int default_item, int nitems, const char *item[],
 			case 0x9b:				/* Return=Select */
 				*seltype = UI_USER_SELECT;
 				return index;
+#ifdef DIRECTX
+			case 0xAA:              /* Mouse click */
+			
+			/* mouse click location, adjusted by context 
+			   this is all we need for one column */
+			tmp_index = UI_mouse_click.y - yoffset + 2;
+					  
+			/* handle two column mode scenarios */
+			if (ncolumns == 2) {
+				/* special case - do nothing if user clicks empty 
+			       bottom cell in column 1 in two column mode.   */	
+				if (UI_mouse_click.x == 1 && UI_mouse_click.y == 20) {
+					UI_mouse_click.x = UI_mouse_click.y = -1;
+					break;
+				} 
+				/* handle two column, multi-page scenarios */
+				else if (UI_mouse_click.x == 1) 
+					tmp_index += offset;
+				else if (UI_mouse_click.x == 2)
+					tmp_index += offset + 20;
+			}
+
+			/* if cell is a valid one, update the index */
+			if (tmp_index > -1 && tmp_index < nitems)
+				index = tmp_index;
+			else 
+				/* otherwise, invalid item, so do nothing */
+				UI_mouse_click.x = UI_mouse_click.y = -1;
+				
+			break;
+#endif 
 			case 0x1b:				/* Esc=Cancel */
 				return -1;
 			default:
@@ -478,9 +565,14 @@ static int BasicUISelect(const char *title, int flags, int default_item, const U
 		y2 = 23;
 	}
 
+	if (y1 < 0)
+		y1 = 0;
+	if (y2 > 23)
+		y2 = 23;
+
 	Box(0x9a, 0x94, x1, y1, x2, y2);
 	index = Select(index, nitems, item, prefix, suffix, tip, nonselectable,
-	                nitems, 1, x1 + 1, y1 + 1, w,
+	                y2 - y1 - 1, 1, x1 + 1, y1 + 1, w,
 	                (flags & UI_SELECT_DRAG) ? TRUE : FALSE, NULL, seltype);
 	if (index < 0)
 		return index;
@@ -530,7 +622,79 @@ static int BasicUISelectInt(int default_value, int min_value, int max_value)
 	return value >= 0 ? value + min_value : default_value;
 }
 
-#ifdef WIN32
+static int SelectSlider(int fg, int bg, int x, int y, int width,
+                        char const *title, int start_value, int max_value,
+                        void (*label_fun)(char *label, int value, void *user_data),
+                        void *user_data)
+{
+	enum { larrow = 126,
+	       rarrow = 127,
+	       bar = 18 };
+	int i;
+	int value = start_value;
+	char label[11];
+	int label_length;
+
+	if (value < 0)
+		value = 0;
+	else if (value > max_value)
+		value = max_value;
+	Box(fg, bg, x, y, x + 1 + width, y + 2);
+	
+	Print(bg, fg, title, x + 1, y, width);
+	Plot(fg, bg, larrow, x + 1, y + 1);
+	Plot(fg, bg, rarrow, x + width, y + 1);
+
+	for (;;) {
+		int ascii;
+		for (i = x + 2; i < x + width; ++i)
+			Plot(fg, bg, bar, i, y + 1);
+		(*label_fun)(label, value, user_data);
+		label_length = strlen(label);
+		Print(bg, fg, label, x + 2 + (width - label_length - 2) * value / max_value, y + 1, label_length);
+		ascii = GetKeyPress();
+		switch (ascii) {
+			case 0x1c:				/* Up */
+				value = 0;
+				break;
+			case 0x1d:				/* Down */
+				value = max_value;
+				break;
+			case 0x1e:				/* Left */
+				if (value > 0)
+					--value;
+				break;
+			case 0x1f:				/* Right */
+				if (value < max_value)
+					++value;
+				break;
+			case 0x1b:				/* Esc=Cancel */
+				/* Restore original state if label_fun causes any side effects. */
+				(*label_fun)(label, start_value, user_data);
+				return -1;
+			case 0x7e:				/* Backspace */
+				value = start_value;
+				if (value < 0)
+					value = 0;
+				else if (value > max_value)
+					value = max_value;
+				break;
+			case 0x9b:				/* Return=Select */
+				return value;
+		}
+	}
+	return -1;
+}
+
+static int BasicUISelectSlider(char const *title, int start_value, int max_value,
+                               void (*label_fun)(char *label, int value, void *user_data),
+                               void *user_data)
+{
+	return SelectSlider(0x9a, 0x94, 3, 11, 32, title, start_value, max_value,
+			    label_fun, user_data);
+}
+
+#ifdef HAVE_WINDOWS_H
 
 static WIN32_FIND_DATA wfd;
 static HANDLE dh = INVALID_HANDLE_VALUE;
@@ -777,7 +941,7 @@ static void GetDirectory(const char *directory)
 	/* in DOS/Windows, add all existing disk letters */
 	{
 		char letter;
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 		DWORD drive_mask = GetLogicalDrives();
 		for (letter = 'A'; letter <= 'Z'; letter++) {
 			if (drive_mask & 1) {
@@ -787,7 +951,7 @@ static void GetDirectory(const char *directory)
 			}
 			drive_mask >>= 1;
 		}
-#else /* WIN32 */
+#else /* HAVE_WINDOWS_H */
 		for (letter = 'A'; letter <= 'Z'; letter++) {
 #ifdef __DJGPP__
 			static char drive[3] = "C:";
@@ -802,7 +966,7 @@ static void GetDirectory(const char *directory)
 				FilenamesAdd(Util_strdup(drive2));
 			}
 		}
-#endif /* WIN32 */
+#endif /* HAVE_WINDOWS_H */
 	}
 #endif /* DOS_DRIVES */
 #ifdef __DJGPP__
@@ -1191,6 +1355,7 @@ static void BasicUIInit(void)
 UI_tDriver UI_BASIC_driver = {
 	&BasicUISelect,
 	&BasicUISelectInt,
+	&BasicUISelectSlider,
 	&BasicUIEditString,
 	&BasicUIGetSaveFilename,
 	&BasicUIGetLoadFilename,

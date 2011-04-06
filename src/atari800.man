@@ -1,7 +1,7 @@
-.TH ATARI800 1 "March 26, 2009"
+.TH ATARI800 1 "April 04, 2011"
 
 .SH NAME
-atari800 \- Atari 800 Emulator, Version 2.1.0
+atari800 \- Atari 800 Emulator, Version 2.2.0
 
 .SH SYNOPSIS
 \fBatari800\fP [options] [files...]
@@ -249,24 +249,51 @@ less frequently updated screen.
 .TP
 \fB-artif <mode>
 Set artifacting mode 0-4 (0 = disable)
+
 .TP
-\fB-paletten/p <filename>
+\fB-colors-preset standard|deep-black|vibrant
+Use one of predefined colour adjustments
+.TP
+\fB-saturation <n>
+Set screen color saturation (like TV Colour control)
+.TP
+\fB-ntsc-saturation <n>\fR, \fB-pal-saturation <n>\fR
+Set saturation only for NTSC or PAL, respectively
+.TP
+\fB-contrast <n>
+Set screen contrast (also called white level)
+.TP
+\fB-ntsc-contrast <n>\fR, \fB-pal-contrast <n>\fR
+Set contrast only for NTSC or PAL, respectively
+.TP
+\fB-brightness <n>
+Set screen brightness (also called black level)
+.TP
+\fB-ntsc-brightness <n>\fR, \fB-pal-brightness <n>\fR
+Set brightness only for NTSC or PAL, respectively
+.TP
+\fB-gamma <n>
+Set screen gamma correction
+.TP
+\fB-ntsc-gamma <n>\fR, \fB-pal-gamma <n>\fR
+Set gamma adjustment only for NTSC or PAL, respectively
+.TP
+\fB-hue <n>
+Set hue -1..1 (like TV Tint control). Only for NTSC.
+.TP
+\fB-colordelay <n>
+Set GTIA color delay. This emulates adjusting the potentiometer visible at
+the bottom of Atari computers, which adjusts hues of colors produced by
+the computer. Only for NTSC.
+
+.TP
+\fB-paletten <filename>\fR, \fB-palettep <filename>\fR
 Read Atari NTSC/PAL colors from ACT file
 .TP
-\fB-blackn/p <num>
-Set NTSC/PAL black level 0-255
-.TP
-\fB-whiten/p <num>
-Set NTSC/PAL white level 0-255
-.TP
-\fB-colorsn/p <num>
-Set NTSC/PAL color intensity
-.TP
-\fB-genpaln/p
-Generate artifical NTSC/PAL palette
-.TP
-\fB-colshiftn/p <num>
-Set color shift (-genpal only)
+\fB-paletten-adjust\fR, \fB-palettep-adjust\fR
+Apply colour adjustments (brightness, contrast etc.) to the loaded NTSC/PAL
+palette (by default the loaded palette is displayed unmodified).
+
 .TP
 \fB-screenshots <pattern>
 Set filename pattern for screenshots. Use to override the default
@@ -340,23 +367,92 @@ Scale width and height by <n>
 
 .TP
 \fB-fullscreen
-Start in fullscreen mode (tries to switch to 336x240 resolution)
+Start in fullscreen mode. The default resolution is 336x240 and can be later
+changed.
 .TP
 \fB-windowed
-Start in a window (does not change your working resolution)
+Start in a window.
 .TP
 \fB-rotate90
-Run the emulator with rotated display (useful for devices with 240x320
-screen)
+Rotate display (useful for devices with 240x320 screen).
 .TP
-\fB-width number-of-pixels
-Host horizontal resolution for fullscreen
+\fB-no-rotate90
+Don't rotate display (the default).
 .TP
-\fB-height number-of-pixels
-Host vertical resolution for fullscreen
+\fB-fs-width <number-of-pixels>
+Host horizontal resolution for fullscreen.
 .TP
-\fB-bpp number-of-bits
-Host color depth for running in fullscreen
+\fB-fs-height <number-of-pixels>
+Host vertical resolution for fullscreen.
+.TP
+\fB-win-width <number-of-pixels>
+Set horizontal size of the window. The window can be later resized manually.
+.TP
+\fB-win-height <number-of-pixels>
+Set vertical size of the window. The window can be later resized nanually.
+.TP
+\fB-bpp <number-of-bits>
+Host color depth for running in fullscreen. Accepted values are: 0 (use desktop
+depth), 8, 16 and 32.
+.TP
+\fB-horiz-area narrow|tv|full|<number>
+Set amount of visible screen horizontally. "Narrow" shows 320 pixels, "Tv"
+shows area visible on a standard TV (336 pixels), and "Full" shows full
+overscan area (384 pixels). An exact horizontal size can be set by providing
+a number between 160 and 384.
+.TP
+\fB-vertical-area short|tv|full|<number>
+Set amount of visible screen vertically. "Short" shows 200 pixels, "Tv" shows
+area visible on a standard TV (224 or 240 pixels, depending on current TV
+system), and "Full" shows full overscan area of 275 pixels. Note that when
+displaying output of an XEP80 or Austin Franklin 80 column card, the "Tv"
+setting will crop the top and bottom parts of text area.
+An exact number of visible scanlines can be set by providing a number between
+100 and 275.
+.TP
+\fB-horiz-offset <number>
+When the visible horizontal area is not set to "full", this option specifies
+the screen's area that will be visible. Values higher than 0 will cause
+showing more of the right side of the screen, while values lower than 0 will
+cause showing more of the left side.
+\fB-vert-offset <number>
+Analogically to -horiz-offset: when the visible vertical area is not set to
+"full", this option specifies the screen's area that will be visible. Values
+higher than 0 will cause showing more of the bottom part of the screen, while
+values lower than 0 will cause showing more of the top part.
+.TP
+\fB-stretch none|integer|full|<number>
+Choose method of stretching of the screen. "None" means that the screen won't
+be stretched at all; "Integer" means that the screen will be fit to screen but
+stretched only by integer multiplier; "Full" means that the screen will fit
+the entire screen's/window's area. A custom multiplier (floating point number)
+can be also provided to precisely set the zoom factor.
+.TP
+\fB-fit-screen width|height|both
+When stretching to fit the screen, stretch so that: whole width must fit the
+screen; whole height must fit; or both width and height must fit the screen.
+.TP
+\fB-keep-aspect none|1to1|real
+Choose how the screen's aspect ratio should be corrected when stretching.
+"None" means that the screen will be stretched unrestricted, and aspect ratio
+won't be corrected; "1to1" means that aspect ratio will be preserved, and the
+screen will be stretched by the same amount horizontally and vertically;
+"Real" recreates the pixel aspect ratio of a real TV set (for NTSC it's about
+0.857, for PAL about 1.039 - pixels are not square).
+.TP
+\fB-host-aspect-ratio <x>:<y>
+Set the host monitor's aspect ratio. Expects values like 4:3, 16:9, 1.25:1 ...
+This value is used to properly compute screen's pixel aspect ratio when having
+-keep-aspect set to "real".
+.TP
+\fB-80column
+Shows output of an 80 column hardware, when it is available. It has effect
+only if an 80 column hardware is activated, using one of the parameters -af80,
+-proto80 or -af80.
+.TP
+\fB-no-80column
+Deactivates showing output of an 80 column hardware.
+
 
 .TP
 \fB-audio16
@@ -374,48 +470,59 @@ Define path to device used in LPTjoy 1. Available on linux-ia32 only.
 
 .TP
 \fB-ntscemu
-Emulate NTSC composite video (640x480x16 only)
-This includes NTSC TV artifacts.  "-artif" is not needed in this mode and will
-not work.  This mode does not use a palette.  The video signal is emulated
-instead.  Palette options such as -genpaln have no effect in this mode.
-The following items are for -ntscemu only:
-
+Activate NTSC filter. This faithfully emulates NTSC composite
+video artifacts. "-artif" is not needed in this mode and will not work.
 .TP
-\fB-ntsc_hue <n>
-Set NTSC hue -1..1 (like TV Tint control)
+\fB-no-ntscemu
+Disable NTSC filter.
 .TP
-\fB-ntsc_sat <n>
-Set NTSC saturation (like TV Colour control)
+\fB-ntsc-filter-preset composite|svideo|rgb|monochrome
+Use one of predefined NTSC filter adjustments.
 .TP
-\fB-ntsc_cont <n>
-Set NTSC contrast (also called white level)
+\fB-ntsc-sharpness <n>
+Set sharpness of the NTSC filter.
 .TP
-\fB-ntsc_bright <n>
-Set NTSC brightness (also called black level)
+\fB-ntsc-resolution <n>
+Set resolution of the NTSC filter.
 .TP
-\fB-ntsc_sharp <n>
-Set NTSC sharpness
+\fB-ntsc-artifacts <n>
+Set artifacts of the NTSC filter.
 .TP
-\fB-ntsc_burst <n>
-Set NTSC burst phase (artificating colours) (CTIA?) Drol, Choplifter,
-Ultima: 0.70
+\fB-ntsc-fringing <n>
+Set fringing of the NTSC filter.
 .TP
-\fB-ntsc_gauss <n>
-Set NTSC Gaussian factor (can affect artifacting colours, sharpness and
-ghosting)
+\fB-ntsc-bleed <n>
+Set bleed of the NTSC filter.
 .TP
-\fB-ntsc_gamma <n>
-Set NTSC gamma adjustment
-.TP
-\fB-ntsc_ramp <n>
-Set NTSC saturation ramp factor (amount by which bright colours become
-desaturated or washed out)
+\fB-ntsc-burstphase <n>
+Set burst phase of the NTSC filter. This changes colors of artifacts. The best
+values are 0, 0.5, 1, 1.5.
 .TP
 \fB-scanlines <n>
-Set scanlines percentage (ntscemu only)
+Set visibility of scanlines (0..100).
 .TP
-\fB-scanlinesnoint
-Disable scanlines interpolation (ntscemu only)
+\fB-scanlinesint
+Enable scanlines interpolation (looks nicer).
+.TP
+\fB-no-scanlinesint
+Disable scanlines interpolation (in software modes may give better performance).
+.TP
+\fB-opengl
+Enable OpenGL hardware acceleration. This uses OpenGL for speed up displaying
+and stretching the screen.
+.TP
+\fB-no-opengl
+Disable OpenGL hardware acceleration.
+.TP
+\fB-bilinear-filter
+Enable bilinear filtering of the screen in OpenGL modes.
+.TP
+\fB-no-bilinear-filter
+Disable bilinear filtering in OpenGL modes.
+.TP
+\fb-opengl-lib <path>
+Provide a custom OpenGL shared library. If not given, Atari800 will use
+a default system-specific library (typically opengl32.dll or libGL.so).
 .TP
 \fB-proto80
 Emulate a prototype 80 column board for the 1090
@@ -425,6 +532,9 @@ Emulate the XEP80
 .TP
 \fB-xep80port <n>
 Use XEP80 on joystick port <n>
+.TP
+\fB-af80
+Emulate the Austin Franklin 80 column daughterboard for Atari 800.
 
 
 .SS X11 Options
@@ -700,82 +810,105 @@ CapsToggle (+Shift = CapsLock)
 
 .TP
 \fBLAlt+F
-Switch fullscreen (probably doesn't work in Windows)
+Switch fullscreen/windowed display.
 .TP
 \fBLAlt+G
-Switch WIDTH_MODE (so you can set 320x240)
-.TP
-\fBLAlt+B
-Switch BLACK-AND-WHITE
+Switch visible horizontal area. See -horiz-area.
 .TP
 \fBLAlt+J
 Swap \fBkeyboard_emulated\fP joysticks
 .TP
-\fBLAlt+E
-Switch bpp (for debug only, will be removed soon)
-.TP
 \fBLAlt+M
 Grab mouse (prevents mouse pointer from leaving the window)
 
-These keys work with the NTSC composite video emualtion (-ntscemu):
-(This interface should be considered experimental and is subject to change)
+.TP
+\fBLAlt+LShift+1
+Decrease hue (like TV Tint control, only NTSC)
 .TP
 \fBLAlt+1
-Decrease NTSC sharpness 
+Increase hue
+.TP
+\fBLAlt+LShift+2
+Decrease saturation (like TV Colour control)
 .TP
 \fBLAlt+2
-Increase NTSC sharpness 
+Increase saturation
+.TP
+\fBLAlt+LShift+3
+Decrease contrast (also called white level)
 .TP
 \fBLAlt+3
-Decrease NTSC saturation (like TV Colour control)
+Increase contrast
+.TP
+\fBLAlt+LShift+4
+Decrease brightness (also called black level)
 .TP
 \fBLAlt+4
-Increase NTSC saturation
+Increase brightness
+.TP
+\fBLAlt+LShift+5
+Decrease gamma adjustment
 .TP
 \fBLAlt+5
-Decrease NTSC brightness (also called black level)
+Increase gamma adjustment
+.TP
+\fBLAlt+LShift+6
+Decrease color delay (Atari color adjustment potentiometer, only NTSC)
 .TP
 \fBLAlt+6
-Increase NTSC brightness
+Increase color delay
+
+These keys work only in the NTSC filter mode (-ntscemu):
+.TP
+\fBLAlt+LShift+7
+Decrease sharpness
 .TP
 \fBLAlt+7
-Decrease NTSC contrast (also called white level) 
+Increase sharpness
+.TP
+\fBLAlt+LShift+8
+Decrease resolution
 .TP
 \fBLAlt+8
-Increase NTSC contrast
+Increase resolution
+.TP
+\fBLAlt+LShift+9
+Decrease artifacts
 .TP
 \fBLAlt+9
-Decrease NTSC burst phase (use this to change artifacting colours) 
+Increase artifacts
+.TP
+\fBLAlt+LShift+0
+Decrease fringing
 .TP
 \fBLAlt+0
-Increase NTSC burst phase
+Increase fringing
+.TP
+\fBLAlt+LShift+-
+Decrease bleed
 .TP
 \fBLAlt+-
-Decrease NTSC Gaussian factor (ghosting, sharpness, artif colours)
+Increase bleed
+.TP
+\fBLAlt+LShift+=
+Decrease NTSC burst phase (use this to change artifacting colours)
 .TP
 \fBLAlt+=
-Increase NTSC Gaussian factor (ghosting, sharpness, artif colours)
+Increase NTSC burst phase
+.TP
+\fBLAlt+LShift+[
+Decrease scanlines percentage
 .TP
 \fBLAlt+[
-Decrease scanlines percentage (NTSC mode only)
+Increase scanlines percentage
 .TP
 \fBLAlt+]
-Increase scanlines percentage (NTSC mode only)
-.TP
-\fBLAlt+;
-Decrease NTSC hue (like TV Tint control)
-.TP
-\fBLAlt+'
-Increase NTSC hue (like TV Tint control)
-.TP
-\fBLAlt+Ins
-Decrease NTSC saturation ramp(reduce saturation for bright colours) 
-.TP
-\fBLAlt+Ins
-Increase NTSC saturation ramp(reduce saturation for bright colours) 
+Toggle NTSC composite/S-Video/RGB/monochrome settings
+
+
 .TP
 \fBLAlt+Shift+X
-Enable/disable XEP80 screen (use with -xep80)
+Enable/disable output of a 80 column hardware (use with -xep80, -proto80 or -af80).
 
 
 .PP

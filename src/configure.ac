@@ -21,7 +21,7 @@ dnl   along with Atari800; if not, write to the Free Software
 dnl   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 AC_PREREQ(2.57)
-AC_INIT(Atari800, 2.1.0, pstehlik@sophics.cz)
+AC_INIT(Atari800, 2.2.0, pstehlik@sophics.cz)
 AC_CONFIG_SRCDIR(atari.c)
 AC_CONFIG_HEADER(config.h)
 
@@ -29,7 +29,7 @@ AC_CONFIG_HEADER(config.h)
 dnl Set a8_target...
 
 case "$target" in
-    basic | curses | ncurses | pdcurses | dosvga | falcon | javanvm | javanvm-basic | ps2 | sdl | windx | x11 | x11-shm | x11-motif | x11-xview | x11-xview-shm)
+    basic | curses | ncurses | pdcurses | dosvga | falcon | javanvm | javanvm-basic | ps2 | android | sdl | windx | x11 | x11-shm | x11-motif | x11-xview | x11-xview-shm)
         a8_target="$target"
         ;;
     shm | motif | xview | xview-shm)
@@ -42,6 +42,7 @@ case "$target" in
         echo "The '--target' option is required.  Use '--help' to see other available"
         echo "options, including Atari800 specific '--enable' options.  Possible values"
         echo "for the '--target' option are:"
+        echo "    android          (Android devices)"
         echo "    basic            (text mode using standard I/O)"
         echo "    curses           (text mode using Curses library)"
         echo "    ncurses          (text mode using NCurses library)"
@@ -65,6 +66,8 @@ esac
 
 AC_CANONICAL_BUILD
 
+WANT_IDE="yes"
+
 dnl Set a8_host...
 
 AC_CANONICAL_HOST
@@ -83,7 +86,7 @@ case $host_os in
     i386-pc-os2-emx)
         a8_host="os/2"
         ;;
-    mingw32)
+    mingw32*)
         a8_host="win"
         AC_DEFINE(DIR_SEP_BACKSLASH,1,[Define to use back slash as directory separator.])
         AC_DEFINE(DOS_DRIVES,1,[Define to enable DOS style drives support.])
@@ -104,6 +107,10 @@ case $host_os in
         AC_DEFINE(DEFAULT_CFG_NAME,"atari800.cfg",[Alternate config filename due to 8+3 fs limit.])
         AC_DEFINE(DOS_DRIVES,1,[Define to enable DOS style drives support.])
         AC_DEFINE(SYSTEM_WIDE_CFG_FILE,"c:\\atari800.cfg",[Alternate system-wide config file for non-Unix OS.])
+	WANT_IDE="no"
+        ;;
+    beos)
+        a8_host="beos"
         ;;
     *unix*)
         a8_host="unix"
@@ -119,6 +126,7 @@ dnl Set CFLAGS and LDFLAGS...
 if [[ "X_$CFLAGS" = "X_" ]]; then
     CFLAGS="-O2 -Wall"
 fi
+CFLAGS="$CFLAGS $CPPFLAGS"
 if [[ "X_$LDFLAGS" = "X_" ]]; then
     LDFLAGS=""
 fi
@@ -133,6 +141,17 @@ if [[ "$a8_target" = "ps2" ]]; then
     LDFLAGS="$LDFLAGS -L${PS2SDK}/ee/lib -L${GSKITSRC}/lib -L${PS2DEV}/ee/lib/gcc-lib/ee/3.2.2"
     LDFLAGS="$LDFLAGS -L${PS2SDK}/ports/lib"
 fi
+if [[ "$a8_target" = "android" ]]; then
+	CC="arm-eabi-gcc"
+	CPP="arm-eabi-cpp"
+	AC_NO_EXECUTABLES
+	CFLAGS="$CFLAGS -I$ANDROID_NDK_ROOT/build/platforms/android-8/arch-arm/usr/include"
+	CPPFLAGS="-I$ANDROID_NDK_ROOT/build/platforms/android-8/arch-arm/usr/include"
+	WANT_IDE=no
+	WANT_MONITOR_READLINE=no
+	WANT_EVENT_RECORDING=no
+	AC_DEFINE(HAVE_GETTIMEOFDAY,1)
+fi
 
 
 dnl Check for programs...
@@ -144,7 +163,9 @@ AC_PROG_INSTALL
 dnl Check for header files...
 
 dnl Beware: AC_PATH_X must NOT be inside "case"!
-AC_PATH_X
+if [[ "$a8_target" != "android" ]]; then
+	AC_PATH_X
+fi
 case "$a8_target" in
     sdl)
         sdlcheck="X_`sdl-config --cflags`"
@@ -168,7 +189,12 @@ dnl the autoconf tests don't work.
         fi
         ;;
 esac
-AC_HEADER_DIRENT
+if [[ "$a8_target" = "android" ]]; then
+    echo "hardcoding dirent.h header"
+    AC_DEFINE(HAVE_DIRENT_H)
+else
+    AC_HEADER_DIRENT
+fi
 AC_HEADER_STDC
 AC_HEADER_TIME
 AC_CHECK_HEADERS([direct.h errno.h file.h signal.h sys/time.h time.h unistd.h unixio.h])
@@ -176,7 +202,7 @@ SUPPORTS_SOUND_OSS=yes
 AC_CHECK_HEADERS([fcntl.h sys/ioctl.h sys/soundcard.h],,SUPPORTS_SOUND_OSS=no)
 SUPPORTS_RDEVICE=yes
 if [[ "$a8_host" = "win" ]]; then
-    AC_CHECK_HEADERS([winsock2.h],,SUPPORTS_RDEVICE=no)
+    AC_CHECK_HEADERS([windows.h winsock2.h],,SUPPORTS_RDEVICE=no)
 else
     AC_CHECK_HEADERS([arpa/inet.h netdb.h netinet/in.h sys/socket.h termios.h],,SUPPORTS_RDEVICE=no)
 fi
@@ -185,10 +211,17 @@ fi
 dnl Check for libraries...
 
 AC_DEFUN(A8_NEED_LIB,AC_CHECK_LIB($1,main,,AC_MSG_ERROR("$1 library not found!")))
-AC_CHECK_LIB(z,gzopen)
-AC_CHECK_LIB(png,png_get_libpng_ver)
-AC_CHECK_LIB(m,cos,[LIBS="-lm $LIBS"])
-AC_CHECK_LIB(ossaudio,_oss_ioctl,[LIBS="-lossaudio $LIBS"])
+if [[ "$a8_target" = "android" ]]; then
+    echo "hardcoding libz"
+    LIBS="-lz $LIBS"
+    AC_DEFINE(HAVE_LIBZ)
+    dnl libm is automatically appended by the build system
+else
+	AC_CHECK_LIB(z,gzopen)
+	AC_CHECK_LIB(png,png_get_libpng_ver)
+	AC_CHECK_LIB(m,cos,[LIBS="-lm $LIBS"])
+	AC_CHECK_LIB(ossaudio,_oss_ioctl,[LIBS="-lossaudio $LIBS"])
+fi
 
 dnl Set OBJS and libraries depending on host and target...
 
@@ -236,7 +269,7 @@ case "$a8_target" in
         ;;
     falcon)
         AC_DEFINE(FALCON,1,[Target: Atari Falcon system.])
-        A8_NEED_LIB(gem)
+        AC_CHECK_LIB(gem, appl_init)
         OBJS="atari_falcon.o falcon/c2p_uni.o falcon/c2p_unid.o falcon/videl.o falcon/ikbd.o"
         ;;
     javanvm)
@@ -281,17 +314,30 @@ case "$a8_target" in
         A8_NEED_LIB(c)
         OBJS="atari_ps2.o ps2kbd.s usbd.s audsrv.s"
         ;;
+	android)
+        AC_DEFINE(ANDROID,1,[Target: Android])
+        AC_DEFINE(SUPPORTS_PLATFORM_PALETTEUPDATE,1,[Update the Palette if it changed.])
+        AC_DEFINE(DIRTYRECT,1,[Define to use dirty screen partial repaints.])
+        dnl AC_DEFINE(NODIRTYCOMPARE,1,[Define to skip memory comparisons - Requires DIRTYRECT.])
+		;;
     sdl)
         AC_DEFINE(SDL,1,[Target: SDL library.])
         AC_DEFINE(SUPPORTS_PLATFORM_CONFIGURE,1,[Additional config file options.])
         AC_DEFINE(SUPPORTS_PLATFORM_CONFIGSAVE,1,[Save additional config file options.])
         AC_DEFINE(SUPPORTS_PLATFORM_PALETTEUPDATE,1,[Update the Palette if it changed.])
         AC_DEFINE(SUPPORTS_SOUND_REINIT,1,[Reinitialise the sound system.])
-	WANT_XEP80_EMULATION=yes
-	WANT_NTSC_FILTER=yes
+        AC_DEFINE(SUPPORTS_CHANGE_VIDEOMODE,1,[Can change video modes on the fly.])
+        AC_DEFINE(SUPPORTS_ROTATE_VIDEOMODE,1,[Can display the screen rotated sideways.])
+        SUPPORTS_SYNCHRONIZED_SOUND="yes"
+        WANT_XEP80_EMULATION=yes
+        WANT_NTSC_FILTER=yes
         LIBS="$LIBS `sdl-config --libs`"
-        OBJS="atari_sdl.o"
-        CFLAGS="$CFLAGS -ansi -pedantic -Waggregate-return -Wmissing-declarations -Wmissing-prototypes -Wredundant-decls -Wstrict-prototypes -Winline"
+        OBJS="videomode.o sdl/main.o sdl/video.o sdl/video_sw.o sdl/input.o sdl/palette.o"
+        CFLAGS="$CFLAGS -ansi -pedantic -Waggregate-return -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Winline"
+        if [[ "$a8_host" != "beos" ]]; then
+dnl BeOS has a real issue with redundant-decls
+            CFLAGS="$CFLAGS -Wredundant-decls"
+        fi
         if [[ "$a8_host" = "win" ]]; then
 dnl Avoid making stdout.txt on Windows sdl target by compiling our own SDL_main
 dnl Get SDL_win32_main.c from the SDL source and copy it to the src directory.
@@ -303,18 +349,26 @@ dnl Don't make this a windowed app, make it a console app.
         fi
         AC_DEFINE(PBI_PROTO80,1,[A prototype 80 column card for the 1090 expansion box.])
         OBJS="$OBJS pbi_proto80.o"
+        AC_DEFINE(AF80,1,[The Austin Franklin 80 column card.])
+        OBJS="$OBJS af80.o"
         ;;
     windx)
         AC_DEFINE(DIRECTX,1,[Target: Windows with DirectX.])
+        AC_DEFINE(SUPPORTS_PLATFORM_CONFIGURE,1,[Additional config file options.])
+        AC_DEFINE(SUPPORTS_PLATFORM_CONFIGSAVE,1,[Save additional config file options.])
         AC_DEFINE(SUPPORTS_PLATFORM_PALETTEUPDATE,1,[Update the Palette if it changed.])
         AC_DEFINE(SUPPORTS_SOUND_REINIT,1,[Reinitialise the sound system.])
         A8_NEED_LIB(ddraw)
         A8_NEED_LIB(dinput)
         A8_NEED_LIB(dsound)
         A8_NEED_LIB(dxguid)
+        A8_NEED_LIB(d3d9)
+        A8_NEED_LIB(gdiplus)
+        A8_NEED_LIB(stdc++)
         A8_NEED_LIB(ws2_32)
-        OBJS="win32/atari_win32.o win32/screen_win32.o win32/main.o win32/keyboard.o win32/joystick.o win32/atari.ro"
+        OBJS="win32/atari_win32.o win32/screen_win32.o win32/render_direct3d.o win32/render_directdraw.o win32/render_gdi.o win32/render_gdiplus.o win32/main.o win32/keyboard.o win32/joystick.o win32/atari.ro"
         CFLAGS="$CFLAGS -ansi -pedantic -Waggregate-return -Wmissing-declarations -Wmissing-prototypes -Wredundant-decls -Wstrict-prototypes -Winline"
+        LDFLAGS="$LDFLAGS -mwindows"
         ;;
     x11*)
         AC_DEFINE(X11,1,[Target: Standard X11.])
@@ -330,7 +384,6 @@ dnl Don't make this a windowed app, make it a console app.
                 AC_DEFINE(XVIEW,1,[Target: X11 with XView.])
                 dnl Dunno if this is the right way...
                 CFLAGS="$CFLAGS -I/usr/openwin/include"
-                LDFLAGS="$LDFLAGS -L/usr/openwin/lib"
                 dnl -lxview must come before -lolgx, otherwise it does not link.
                 dnl Note that AC_CHECK_LIB (and therefore A8_NEED_LIB) _prepends_
                 dnl the found library to LIBS.
@@ -429,21 +482,56 @@ fi
 
 dnl Check for library functions...
 
+# from "Autoconf Archive":
+AC_DEFUN([AX_FUNC_MKDIR],
+[AC_CHECK_FUNCS([mkdir _mkdir])
+AC_CACHE_CHECK([whether mkdir takes one argument],
+               [ac_cv_mkdir_takes_one_arg],
+[AC_TRY_COMPILE([
+#include <sys/stat.h>
+#if HAVE_UNISTD_H
+#  include <unistd.h>
+#endif
+], [mkdir (".");],
+[ac_cv_mkdir_takes_one_arg=yes], [ac_cv_mkdir_takes_one_arg=no])])
+if test x"$ac_cv_mkdir_takes_one_arg" = xyes; then
+  AC_DEFINE([MKDIR_TAKES_ONE_ARG], 1,
+            [Define if mkdir takes only one argument.])
+fi
+])
+
 AC_FUNC_CLOSEDIR_VOID
 AC_FUNC_MEMCMP
 AC_FUNC_SELECT_ARGTYPES
 AC_FUNC_STAT
-AC_FUNC_VPRINTF
-AC_CHECK_FUNCS([atexit chmod clock fdopen fflush floor fstat getcwd])
-AC_CHECK_FUNCS([gettimeofday localtime memmove memset mkdir mkstemp mktemp])
-AC_CHECK_FUNCS([modf nanosleep opendir rename rewind rmdir signal snprintf])
-AC_CHECK_FUNCS([stat strcasecmp strchr strdup strerror strrchr strstr])
-AC_CHECK_FUNCS([strtol system time tmpfile tmpnam uclock unlink vsnprintf])
+if [[ "$a8_target" = "android" ]]; then
+    echo "hardcoding libc funcs"
+    AC_DEFINE(HAVE_VPRINTF) AC_DEFINE(HAVE_ATEXIT) AC_DEFINE(HAVE_CHMOD) AC_DEFINE(HAVE_FDOPEN)
+    AC_DEFINE(HAVE_FFLUSH) AC_DEFINE(HAVE_FLOOR) AC_DEFINE(HAVE_FSTAT) AC_DEFINE(HAVE_GETCWD)
+    AC_DEFINE(HAVE_GETTIMEOFDAY) AC_DEFINE(HAVE_LOCALTIME) AC_DEFINE(HAVE_MEMMOVE) AC_DEFINE(HAVE_MEMSET)
+    AC_DEFINE(HAVE_MKSTEMP) AC_DEFINE(HAVE_MKTEMP) AC_DEFINE(HAVE_MODF) AC_DEFINE(HAVE_NANOSLEEP)
+    AC_DEFINE(HAVE_OPENDIR) AC_DEFINE(HAVE_RENAME) AC_DEFINE(HAVE_REWIND) AC_DEFINE(HAVE_RMDIR)
+    AC_DEFINE(HAVE_SIGNAL) AC_DEFINE(HAVE_SNPRINTF) AC_DEFINE(HAVE_STAT) AC_DEFINE(HAVE_STRCASECMP)
+    AC_DEFINE(HAVE_STRCHR) AC_DEFINE(HAVE_STRDUP) AC_DEFINE(HAVE_STRERROR) AC_DEFINE(HAVE_STRRCHR)
+    AC_DEFINE(HAVE_STRSTR) AC_DEFINE(HAVE_STRTOL) AC_DEFINE(HAVE_SYSTEM) AC_DEFINE(HAVE_TIME)
+    AC_DEFINE(HAVE_TMPNAM) AC_DEFINE(HAVE_UCLOCK) AC_DEFINE(HAVE_UNLINK)
+    AC_DEFINE(HAVE_VSNPRINTF) AC_DEFINE(HAVE_MKDIR)
+    AC_DEFINE(HAVE_SELECT) AC_DEFINE(HAVE_USLEEP) AC_DEFINE(HAVE_STRNCPY)
+	dnl Leave out tmpfile to force creation of temp files to external
+else
+    AC_FUNC_VPRINTF
+    AC_CHECK_FUNCS([atexit chmod clock fdopen fflush floor fstat getcwd])
+    AC_CHECK_FUNCS([gettimeofday localtime memmove memset mkstemp mktemp])
+    AC_CHECK_FUNCS([modf nanosleep opendir rename rewind rmdir signal snprintf])
+    AC_CHECK_FUNCS([stat strcasecmp strchr strdup strerror strrchr strstr])
+    AC_CHECK_FUNCS([strtol system time tmpfile tmpnam uclock unlink vsnprintf])
+    AX_FUNC_MKDIR
+fi
 dnl select usleep strncpy are broken on javanvm targets
-if [[ "$a8_target" != "javanvm" -a "$a8_target" != "javanvm-basic" ]]; then
+if [[ "$a8_target" != "javanvm" -a "$a8_target" != "javanvm-basic" -a "$a8_target" != "android" ]]; then
     AC_CHECK_FUNCS([select usleep strncpy])
 fi
-if [[ "$a8_host" != "win" ]]; then
+if [[ "$a8_host" != "win" -a "$a8_target" != "android" ]]; then
     AC_CHECK_FUNCS([gethostbyaddr gethostbyname inet_ntoa socket],,SUPPORTS_RDEVICE=no)
 fi
 
@@ -482,7 +570,7 @@ if [[ "$a8_target" != "basic" -a "$a8_target" != "javanvm-basic" ]]; then
     if [[ "$WANT_CURSES_BASIC" != "yes" ]]; then
 
         dnl These objects are not compiled in BASIC nor CURSES_BASIC target
-        OBJS="$OBJS colours.o screen.o"
+        OBJS="$OBJS colours.o colours_ntsc.o colours_pal.o colours_external.o screen.o"
 
         A8_OPTION(newcycleexact,yes,
                   [Allow color changes inside a scanline (default=ON)],
@@ -545,19 +633,54 @@ A8_OPTION(monitortrace,no,
           MONITOR_TRACE,[Define to activate TRACE command in monitor.]
          )
 
-if [[ "$WANT_MONITOR_READLINE" != "no" ]]; then
-	AC_CHECK_LIB(readline,readline,
-		[A8_OPTION(readline,yes,
-          		[Support readline in the monitor (default=ON)],
-          		MONITOR_READLINE,[Define to activate readline support in monitor.]
-			)],
-		WANT_MONITOR_READLINE="no"
-	)
+AC_ARG_ENABLE(monitor-readline,
+              AC_HELP_STRING(--disable-monitor-readline,[Don't use Readline for input in monitor]),
+              WANT_MONITOR_READLINE=$enableval,
+              WANT_MONITOR_READLINE=yes)
+
+# Check for existence of the readline library and headers.
+if [[ "$WANT_MONITOR_READLINE" = yes ]]; then
+# Readline uses termcap internally. Termcap's functionality is nowadays
+# provided by several libraries (eg. ncurses). However, on some environments,
+# Readline is not linked to a Termcap-providing library at compile-time.
+# So, we check whether Readline is already linked to such library, by checking
+# existence of the tgetent symbol in readline. If not, we search for tgetent
+# in a few other libraries. All done with a single AC_SEARCH_LIBS statement.
+    have_tgetent=no
+    have_readline=no
+    AC_SEARCH_LIBS(tgetent, [readline ncursesw ncurses curses termcap], have_tgetent=yes)
+    if [[ "$have_tgetent" = yes ]]; then
+        AC_SEARCH_LIBS(readline, readline, have_readline=yes)
+        if [[ "$have_readline" = yes ]]; then
+            AC_CHECK_HEADERS([readline/readline.h],[],have_readline=no)
+        else
+            AC_MSG_WARN([Unable to find readline, which is needed for requested features.])
+            WANT_MONITOR_READLINE=no
+        fi
+    else
+        AC_MSG_WARN([Unable to properly link the readline library, which is needed for requested features.
+        Readline needs a library that provides termcap functionality; such library was not found.
+        Try installing one of ncursew, ncurses, curses, termcap.])
+        WANT_MONITOR_READLINE=no
+    fi
 fi
 
-if [[ "$WANT_MONITOR_READLINE" != "no" ]]; then
-	LIBS="-lreadline -ltermcap $LIBS"
+if [[ "$WANT_MONITOR_READLINE" = yes ]]; then
+    AC_DEFINE(MONITOR_READLINE, 1, [Define to activate readline support in monitor.])
 fi
+#if [[ "$WANT_MONITOR_READLINE" != "no" ]]; then
+#	AC_CHECK_LIB(readline,readline,
+#		[A8_OPTION(readline,yes,
+#          		[Support readline in the monitor (default=ON)],
+#          		MONITOR_READLINE,[Define to activate readline support in monitor.]
+#			)],
+#		WANT_MONITOR_READLINE="no"
+#	)
+#fi
+#
+#if [[ "$WANT_MONITOR_READLINE" != "no" ]]; then
+#	LIBS="-lreadline -ltermcap $LIBS"
+#fi
 
 if [[ "$WANT_EVENT_RECORDING" != "no" ]]; then
 dnl we already checked for libz and added it to LIBS
@@ -602,16 +725,25 @@ if [[ "$WANT_SOUND" = "yes" ]]; then
 
     OBJS="$OBJS pokeysnd.o mzpokeysnd.o remez.o sndsave.o"
 
-    if [[ "$a8_target" != "ps2" -a "$a8_target" != "sdl" -a "$a8_target" != "javanvm" ]]; then
+    if [[ "$a8_target" != "ps2" -a "$a8_target" != "android" -a "$a8_target" != "javanvm" ]]; then
         case "$a8_host" in
             dos)
                 OBJS="$OBJS dos/sound_dos.o dos/dos_sb.o"
                 ;;
             win)
-                OBJS="$OBJS win32/sound.o"
+                if [[ "$a8_target" = "sdl" ]]; then
+                    OBJS="$OBJS sdl/sound.o"
+                else
+                    OBJS="$OBJS win32/sound.o"
+                fi
                 ;;
             falcon)
                 OBJS="$OBJS sound_falcon.o falcon/sound_dma.o"
+                ;;
+            linux)
+                if [[ "$a8_target" = "sdl" ]]; then
+                    OBJS="$OBJS sdl/sound.o"
+                fi
                 ;;
             *)
                 if [[ "$SUPPORTS_SOUND_OSS" = "yes" ]]; then
@@ -623,10 +755,24 @@ if [[ "$WANT_SOUND" = "yes" ]]; then
         esac
     fi
 
-    A8_OPTION(nonlinear_mixing,no,
-              [Use nonlinear POKEY mixing (default=OFF)],
-              NONLINEAR_MIXING,[Define to use nonlinear POKEY mixing.]
-             )
+    if [[ "$SUPPORTS_SYNCHRONIZED_SOUND" = "yes" ]]; then
+        A8_OPTION(synchronized_sound,yes,
+                  [Use synchronized sound (default=ON)],
+                  SYNCHRONIZED_SOUND,[Define to use synchronized sound.]
+                 )
+
+        A8_OPTION(nonlinear_mixing,yes,
+                  [Use nonlinear POKEY mixing (default=ON)],
+                  NONLINEAR_MIXING,[Define to use nonlinear POKEY mixing.]
+                 )
+    else
+
+        A8_OPTION(nonlinear_mixing,no,
+                  [Use nonlinear POKEY mixing (default=OFF)],
+                  NONLINEAR_MIXING,[Define to use nonlinear POKEY mixing.]
+                 )
+        WANT_SYNCHRONIZED_SOUND="no"
+    fi
 
     A8_OPTION(interpolatesound,yes,
               [Use sound interpolation (default=ON)],
@@ -664,11 +810,22 @@ if [[ "$WANT_SOUND" = "yes" ]]; then
               [Emulate 1450XLD (default=ON)],
               PBI_XLD,[Define to emulate the 1400XL/1450XLD.]
              )
+    A8_OPTION(voicebox,yes,
+              [Emulate the Alien Group Voice Box (default=ON)],
+              VOICEBOX,[Define to emulate the Alien Group Voice Box.]
+             )
     if [[ "$WANT_PBI_XLD" = "yes" ]]; then
-        OBJS="$OBJS pbi_xld.o votrax.o"
+        OBJS="$OBJS pbi_xld.o"
+    fi
+    if [[ "$WANT_VOICEBOX" = "yes" ]]; then
+        OBJS="$OBJS voicebox.o"
+    fi
+    if [[ "$WANT_PBI_XLD" = "yes" -o "$WANT_VOICEBOX" = "yes" ]]; then
+        OBJS="$OBJS votrax.o votraxsnd.o"
     fi
 else
     WANT_NONLINEAR_MIXING="no"
+    WANT_SYNCHRONIZED_SOUND="no"
     WANT_INTERPOLATE_SOUND="no"
     WANT_STEREO_SOUND="no"
     WANT_VOL_ONLY_SOUND="no"
@@ -678,6 +835,15 @@ else
     WANT_PBI_XLD_SOUND="no"
 fi
 
+A8_OPTION(ide,$WANT_IDE,
+          [Provide IDE emulation (default=ON)],
+          IDE,[Define to add IDE harddisk emulation.]
+         )
+if [[ "$WANT_IDE" == "yes" ]]; then
+    AC_SYS_LARGEFILE
+    AC_FUNC_FSEEKO
+    OBJS="$OBJS ide.o"
+fi
 
 dnl Select host/target specific features...
 
@@ -715,7 +881,7 @@ fi
 
 if [[ "$WANT_NTSC_FILTER" = "yes" ]]; then
 	AC_DEFINE(NTSC_FILTER,1,[Use NTSC video filter.])
-    OBJS="$OBJS atari_ntsc.o"
+    OBJS="$OBJS filter_ntsc.o atari_ntsc/atari_ntsc.o"
 fi
 
 if [[ "$SUPPORTS_RDEVICE" = "yes" ]]; then
@@ -741,6 +907,46 @@ if [[ "$SUPPORTS_RDEVICE" = "yes" ]]; then
     fi
 fi
 
+dnl Set SDL-OpenGL availability
+
+AC_ARG_ENABLE(opengl,
+    AC_HELP_STRING(--enable-opengl,[Use OpenGL for graphics - only in SDL target (default=on if OpenGL installed)]),
+    WANT_OPENGL="$enableval",
+    WANT_OPENGL=maybe
+)
+if [[ "$a8_target" = sdl ]]; then
+    AC_MSG_CHECKING(for OpenGL)
+    if [[ "$WANT_OPENGL" != no ]]; then
+        found_opengl=no
+        AC_TRY_COMPILE([
+ #include "SDL_opengl.h"
+        ],[],[found_opengl=yes])
+    fi
+
+    if [[ "$WANT_OPENGL" != "no" ]]; then
+        if [[ "$found_opengl" = yes ]]; then
+            WANT_OPENGL=yes
+            OBJS="$OBJS sdl/video_gl.o"
+        else
+            if [[ "$WANT_OPENGL" = yes ]]; then
+                AC_MSG_ERROR([Building with OpenGL was requested, but OpenGL is not installed on your system.])
+            else # WANT_OPENGL is "maybe"
+                WANT_OPENGL=no
+            fi
+        fi
+        AC_MSG_RESULT($found_opengl)
+    else
+        AC_MSG_RESULT(disabled by user)
+    fi
+else
+    if [[ "$WANT_OPENGL" = "yes" ]]; then
+        AC_MSG_ERROR("Option --enable-opengl not supported in this target!")
+    fi
+    WANT_OPENGL=no
+fi
+if [[ "$WANT_OPENGL" = "yes" ]]; then
+    AC_DEFINE(HAVE_OPENGL, 1, [Support for OpenGL graphics acceleration.])
+fi
 
 dnl Wrapup: export OBJS and write Makefile...
 
@@ -750,6 +956,9 @@ AC_SUBST(JAVACFLAGS)
 CONFIGURE_TARGET="$target"
 AC_SUBST(CONFIGURE_TARGET)
 AC_CONFIG_FILES(Makefile)
+if [[ "$a8_target" = "android" ]]; then
+	AC_CONFIG_FILES(android/jni/Android.mk)
+fi
 AC_OUTPUT
 
 
@@ -785,9 +994,11 @@ echo "Using readline support in monitor?....: $WANT_MONITOR_READLINE"
 echo "Using event recording?................: $WANT_EVENT_RECORDING"
 echo "Using MIO emulation?..................: $WANT_PBI_MIO"
 echo "Using Black Box emulation?............: $WANT_PBI_BB"
+echo "Using IDE emulation?..................: $WANT_IDE"
 echo "Using sound?..........................: $WANT_SOUND"
 if [[ "$WANT_SOUND" = "yes" ]]; then
     echo "    Using nonlinear mixing?...........: $WANT_NONLINEAR_MIXING"
+    echo "    Using synchronized sound?.........: $WANT_SYNCHRONIZED_SOUND"
     echo "    Using sound interpolation?........: $WANT_INTERPOLATE_SOUND"
     echo "    Using stereo sound?...............: $WANT_STEREO_SOUND"
     echo "    Using volume only sound?..........: $WANT_VOL_ONLY_SOUND"
@@ -820,6 +1031,9 @@ if [[ "$SUPPORTS_RDEVICE" = "yes" ]]; then
             echo "Using R: with the host serial port?...: $WANT_R_SERIAL"
             echo "Using R: with IP network support......: $WANT_R_NETWORK"
         fi
+fi
+if [[ "$a8_target" = "sdl" ]]; then
+    echo "Using OpenGL?.........................: $WANT_OPENGL"
 fi
 echo
 echo "Main build variables:"

@@ -44,6 +44,9 @@
 #ifdef PBI_PROTO80
 #include "pbi_proto80.h"
 #endif
+#ifdef AF80
+#include "af80.h"
+#endif
 
 /* stores the current state of the D1FF register, real hardware has 1
  * bit per device, the bits are on the devices themselves */
@@ -162,7 +165,7 @@ UBYTE PBI_D1GetByte(UWORD addr)
 		return result;
 	}
 	/* addr was not handled: */
-	D(printf("PBI_GetByte:%4x:%2x PC:%4x IRQ:%d\n",addr,result,CPU_regPC,IRQ));
+	D(printf("PBI_GetByte:%4x:%2x PC:%4x IRQ:%d\n",addr,result,CPU_regPC,CPU_IRQ));
 	return result; /* 0xff */
 }
 
@@ -231,6 +234,9 @@ void PBI_D1PutByte(UWORD addr, UBYTE byte)
 /* $D6xx */
 UBYTE PBI_D6GetByte(UWORD addr)
 {
+#ifdef AF80
+	if (AF80_enabled) return AF80_D6GetByte(addr);
+#endif
 #ifdef PBI_MIO
 	if (PBI_MIO_enabled) return PBI_MIO_D6GetByte(addr);
 #endif
@@ -245,6 +251,12 @@ UBYTE PBI_D6GetByte(UWORD addr)
 /* $D6xx */
 void PBI_D6PutByte(UWORD addr, UBYTE byte)
 {
+#ifdef AF80
+	if (AF80_enabled) {
+		AF80_D6PutByte(addr,byte);
+		return;
+	}
+#endif
 #ifdef PBI_MIO
 	if (PBI_MIO_enabled) {
 		PBI_MIO_D6PutByte(addr,byte);

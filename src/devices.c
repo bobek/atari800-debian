@@ -2,7 +2,7 @@
  * devices.c - emulation of H:, P:, E: and K: Atari devices
  *
  * Copyright (C) 1995-1998 David Firth
- * Copyright (C) 1998-2005 Atari800 development team (see DOC/CREDITS)
+ * Copyright (C) 1998-2010 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -81,7 +81,7 @@
 #define S_IWRITE S_IWUSR
 #endif
 
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 
 #include <windows.h>
 
@@ -99,12 +99,12 @@
 #define FILENAME filename
 #endif /* UNICODE */
 
-#endif /* WIN32 */
+#endif /* HAVE_WINDOWS_H */
 
 
 /* Read Directory abstraction layer -------------------------------------- */
 
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 
 static char dir_path[FILENAME_MAX];
 static WIN32_FIND_DATA wfd;
@@ -353,7 +353,7 @@ static int Devices_ReadDir(char *fullpath, char *filename, int *isdir,
 
 /* Rename File/Directory abstraction layer ------------------------------- */
 
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 
 static int Devices_Rename(const char *oldname, const char *newname)
 {
@@ -385,7 +385,7 @@ static int Devices_Rename(const char *oldname, const char *newname)
 
 /* Set/Reset Read-Only Attribute abstraction layer ----------------------- */
 
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 
 /* Enables/disables read-only mode for the file. Returns TRUE on success. */
 static int Devices_SetReadOnly(const char *filename, int readonly)
@@ -416,7 +416,7 @@ static int Devices_SetReadOnly(const char *filename, int readonly)
 
 /* Make Directory abstraction layer -------------------------------------- */
 
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 
 static int Devices_MakeDirectory(const char *filename)
 {
@@ -430,10 +430,11 @@ static int Devices_MakeDirectory(const char *filename)
 
 static int Devices_MakeDirectory(const char *filename)
 {
-	/* XXX: I don't see any good reason why umask() and limited permissions were used. */
-	/* umask(S_IWGRP | S_IWOTH); */
-	return (mkdir(filename, 0777
-		 /* S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IROTH | S_IXGRP | S_IXOTH */) == 0);
+	return mkdir(filename
+#ifndef MKDIR_TAKES_ONE_ARG
+		, 0777
+#endif
+		) == 0;
 }
 
 #define DO_MKDIR
@@ -443,7 +444,7 @@ static int Devices_MakeDirectory(const char *filename)
 
 /* Remove Directory abstraction layer ------------------------------------ */
 
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 
 static UBYTE Devices_RemoveDirectory(const char *filename)
 {
@@ -1842,8 +1843,9 @@ static void Devices_P_Close(void)
 #endif
 		{
 			char command[256 + FILENAME_MAX]; /* 256 for Devices_print_command + FILENAME_MAX for spool_file */
+			int retval;
 			sprintf(command, Devices_print_command, spool_file);
-			system(command);
+			retval = system(command);
 #if defined(HAVE_UTIL_UNLINK) && !defined(VMS) && !defined(MACOSX)
 			if (Util_unlink(spool_file) != 0) {
 				perror(spool_file);
@@ -2508,3 +2510,7 @@ void Devices_UpdatePatches(void)
 	}
 #endif /* defined(R_IO_DEVICE) */
 }
+
+/*
+vim:ts=4:sw=4:
+*/

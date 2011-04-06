@@ -3,6 +3,9 @@
 
 #include "config.h"
 #include <stdio.h>
+#if SUPPORTS_CHANGE_VIDEOMODE
+#include "videomode.h"
+#endif
 
 /* This include file defines prototypes for platform-specific functions. */
 
@@ -49,27 +52,32 @@ extern int PLATFORM_kbd_joy_1_enabled;
 int PLATFORM_GetRawKey(void);
 #endif
 
-#ifdef XEP80_EMULATION
-/* Switch between the Atari and XEP80 screen */
-void PLATFORM_SwitchXep80(void);
-/* TRUE if the XEP80 screen is visible */
-extern int PLATFORM_xep80;
+#ifdef DIRECTX
+int PLATFORM_GetKeyName(void);
 #endif
 
-#ifdef NTSC_FILTER
-enum PLATFORM_filter_t {
-	PLATFORM_FILTER_NONE,
-	PLATFORM_FILTER_NTSC
-};
+#ifdef SYNCHRONIZED_SOUND
+/* This function returns a number which is used to adjust the speed
+ * of execution to synchronize with the sound output */
+double PLATFORM_AdjustSpeed(void);
+#endif /* SYNCHRONIZED SOUND */
 
-/* Represents whether the NTSC filter is turned on. Don't set this value
-   directly. */
-extern enum PLATFORM_filter_t PLATFORM_filter;
-
-/* This function turns the NTSC filter on or off. Changing the
-   PLATFORM_filter variable directly is not allowed; use this function
-   instead. */
-void PLATFORM_SetFilter(const enum PLATFORM_filter_t filter);
-#endif /* NTSC_FILTER */
+#if SUPPORTS_CHANGE_VIDEOMODE
+/* Returns whether the platform-specific code support the given display mode, MODE,
+   with/without stretching and with/without rotation. */
+int PLATFORM_SupportsVideomode(VIDEOMODE_MODE_t mode, int stretch, int rotate90);
+/* Sets the screen (or window, if WINDOWED is TRUE) to resolution RES and
+   selects the display mode, MODE. If ROTATE90 is TRUE, then the display area
+   is rotated 90 degrees counter-clockwise. If WINDOW_RESIZED is TRUE, then
+   this call to PLATFORM_SetVideoMode was caused by a user resising
+   the window. */
+void PLATFORM_SetVideoMode(VIDEOMODE_resolution_t const *res, int windowed, VIDEOMODE_MODE_t mode, int rotate90, int window_resized);
+/* Returns list of all available resolutions. The result points to a newly
+   allocated memory. If no resolutions are found, the result is NULL and no
+   memory is allocated. Entries on the list may repeat.*/
+VIDEOMODE_resolution_t *PLATFORM_AvailableResolutions(unsigned int *size);
+/* Returns the current desktop resolution. Used to compute pixel aspect ratio in windowed modes. */
+VIDEOMODE_resolution_t *PLATFORM_DesktopResolution(void);
+#endif /* SUPPORTS_CHANGE_VIDEOMODE */
 
 #endif /* PLATFORM_H_ */

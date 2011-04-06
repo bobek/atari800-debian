@@ -7,7 +7,7 @@ atari800 [options] [filenames]
 where:
 "filenames" are names of files supported by the emulator.
 The following file types are currently supported:
-- disk images: ATR, XFD, ATR.GZ/ATZ, XFD.GZ/XFZ, DCM
+- disk images: ATR, XFD, ATR.GZ/ATZ, XFD.GZ/XFZ, DCM, PRO, ATX
 - programs: COM/EXE/XEX, BAS, LST
 - cartridge images: CAR/CART, ROM (raw)
 - tape images: CAS, raw bootable programs
@@ -83,6 +83,8 @@ Command line options
 -basic                Turn on Atari BASIC ROM
 
 -cart <filename>      Insert cartridge (CART or raw format)
+-cart2 <filename>     Insert second cartridge (CART or raw format)
+                        Only if first cartridge is SpartaDOS X (64 or 128)
 
 -run <filename>       Run Atari program (EXE, COM, XEX, BAS, LST)
 
@@ -95,6 +97,9 @@ Command line options
 -xld                  Emulate the Atari 1450XLD
 -bb                   Emulate the CSS Black Box
 -mio                  Emulate the ICD MIO board
+
+-voicebox             Emulate the Alien Group Voice Box I
+-voiceboxii           Emulate the Alien Group Voice Box II
 
 -nopatch              Don't patch SIO routine in OS
 -nopatchall           Don't patch OS at all, H:, P: and R: devices won't work
@@ -133,25 +138,40 @@ Command line options
 
 -refresh <rate>       Set screen refresh rate
 -artif <mode>         Set artifacting mode 0-4 (0 = disable) (see also -ntscemu)
+
+-colors-preset standard|deep-black|vibrant
+                      Use one of predefined color adjustments
+-saturation <n>       Set screen color saturation (like TV Colour control)
+-contrast <n>         Set screen contrast (also called white level)
+-brightness <n>       Set screen brightness (also called black level)
+-gamma <n>            Set screen gamma correction
+-ntsc-saturation <n>  Set saturation only for NTSC
+-ntsc-contrast <n>    Set contrast only for NTSC
+-ntsc-brightness <n>  Set brightness only for NTSC
+-ntsc-gamma <n>       Set gamma adjustment only for NTSC
+-hue <n>              Set hue -1..1 (like TV Tint control, NTSC only)
+-colordelay <n>       Set GTIA color delay (emulates the potentiometer at the
+                      bottom of Atari computers, that adjusts colors; NTSC only)
+-pal-saturation <n>   Set saturation only for PAL
+-pal-contrast <n>     Set contrast only for PAL
+-pal-brightness <n>   Set brightness only for PAL
+-pal-gamma <n>        Set gamma adjustment only for PAL
+
 -paletten <filename>  Read Atari NTSC colors from ACT file
+-paletten-adjust      Apply the colour adjustments to the loaded NTSC palette
 -palettep <filename>  Read Atari PAL colors from ACT file
--blackn <num>         Set NTSC black level 0-255
--blackp <num>         Set PAL black level 0-255
--whiten <num>         Set NTSC white level 0-255
--whitep <num>         Set PAL white level 0-255
--colorsn <num>        Set NTSC color intensity
--colorsp <num>        Set PAL color intensity
--genpaln              Generate artificial NTSC palette
--genpalp              Generate artificial PAL palette
--colshiftn <num>      Set color shift (-genpaln only)
--colshiftp <num>      Set color shift (-genpalp only)
+-palettep-adjust      Apply the colour adjustments to the loaded PAL palette
+
 -screenshots <pattern>Set filename pattern for screenshots
 -showspeed            Show percentage of actual speed
+-turbo                Run at max speed (Turbo mode)
 
 -sound                Enable sound
 -nosound              Disable sound
 -dsprate <freq>       Set mixing frequency (Hz)
 -snddelay <time>      Set sound delay (milliseconds)
+-ide <file>           Enable IDE emulation
+-ide_debug            Enable IDE Debug output
 
 
 Curses version options
@@ -202,39 +222,81 @@ SDL version options
 
 -fullscreen           Start in fullscreen mode
 -windowed             Start in windowed mode
--rotate90             Useful for devices with 240x320 screen (handhelds)
--width x              Set mode width
--height y             Set mode height
--bpp b                Set mode bits per pixel
+-rotate90             Rotate display (useful for devices with 240x320 screen)
+-no-rotate90          Don't rotate display (the default)
+-fs-width <x>         Set horizontal fullscreen resolution
+-fs-height <y>        Set vertical fullscreen resolution
+-win-width <x>        Set window's horizontal size
+-win-height <y>       Set window's vertical size
+-bpp <n>              Set mode bits per pixel (0=desktop depth, 8, 16, 32)
+-horiz-area narrow|tv|full|<number>
+                      Set visible horizontal area:
+                      narrow: 320 pixels,
+                      tv: similar to real tv - 336 pixels,
+                      full: full overscan - 384 pixels,
+                      or provide a number between 160 and 384.
+-vert-area short|tv|full|<number>
+                      Set visible vertical area:
+                      short: 200 pixels,
+                      tv: similar to real tv - 224 or 240 pixels (depending on
+                      TV system),
+                      full: full overscan - 275 pixels,
+                      or provide a number between 100 and 275.
+-horiz-offset <n>     Set horizontal offset of the visible area (-384..384)
+-vert-offset <n>      Set vertical offset of the visible area (-275..275)
+-stretch none|integer|full|<number>
+                      Set method for screen stretching:
+                      none: no stretching at all,
+                      integer: fit to screen, stretch by integer multiplier
+                      full: fit to screen, unrestricted stretching
+                      or provide a custom multiplier (e.g. 2, 3, 2.5, ...)
+-fit-screen width|height|both
+                      Set method of fitting the display to screen/window.
+-keep-aspect none|1to1|real
+                      How to correct screen aspect ratio when stretching:
+                      none: no correction, screen stretching unrestricted,
+                      1to1: width and height stretched by the same multipler
+                      real: real TV's aspect ratio (depending on TV system)
+-host-aspect-ratio <x>:<y>
+                      Set host display's aspect ratio. Used to correctly
+                      compute aspect ratio when -keep-aspect is "real".
+-80column             Display output of 80 column hardware. Usable only in
+                      conjunction with one of -xep80, -proto80, -af80
+-no-80column          Display normal screen instead of 80 column output
 
--audio16              Enable 16-bit sound
+-audio16              Use 16-bit sound
+-audio8               Use 8-bit sound
 
 -nojoystick           Do not initialize joysticks
 -joy0 </dev/lp0>      Define the device for LPTjoy
 -joy1 </dev/lp1>      --""-- only when LPTjoy support compiled in
 
--ntscemu              Emulate NTSC composite video (640x480x16 only)
+-ntscemu              Emulate NTSC composite video
 This includes NTSC TV artifacts.  "-artif" is not needed in this mode and will
-not work.  This mode does not use a palette.  The video signal is emulated
-instead.  Palette options such as -genpaln have no effect in this mode.
-The following items are for -ntscemu only:
--ntsc_hue <n>         Set NTSC hue -1..1 (like TV Tint control)
--ntsc_sat <n>         Set NTSC saturation (like TV Colour control)
--ntsc_cont <n>        Set NTSC contrast (also called white level)
--ntsc_bright <n>      Set NTSC brightness (also called black level)
--ntsc_sharp <n>       Set NTSC sharpness
--ntsc_burst <n>       Set NTSC burst phase (artificating colours)
-                      (CTIA?) Drol, Choplifter, Ultima: 0.70
--ntsc_gauss <n>       Set NTSC Gaussian factor 
-                      (can affect artifacting colours, sharpness and ghosting)
--ntsc_gamma <n>       Set NTSC gamma adjustment
--ntsc_ramp <n>        Set NTSC saturation ramp factor (amount by which
-                      bright colours become desaturated or washed out)
--scanlines <n>        Set scanlines percentage (ntscemu only)
--scanlinesnoint       Disable scanlines interpolation (ntscemu only)
+not work.
+-no-ntscemu            Disable emulation of NTSC composite video
+The following 7 items are for -ntscemu only:
+-ntsc-filter-preset composite|svideo|rgb|monochrome
+                      Use one of predefined NTSC filter adjustments
+-ntsc-sharpness <n>   Set sharpness
+-ntsc-resolution <n>  Set resolution
+-ntsc-artifacts <n>   Set artifacts
+-ntsc-fringing <n>    Set fringing
+-ntsc-bleed <n>       Set bleed
+-ntsc-burstphase <n>  Set burst phase. This changes colors of artifacts.
+                      The best values are 0, 0.5, 1, 1.5
+-scanlines <n>        Set visibility of scanlines (0-100)
+-scanlinesint         Enable scanlines interpolation
+-no-scanlinesint      Disable scanlines interpolation
+-opengl               Enable OpenGL hardware acceleration
+-no-opengl            Disable OpenGL hardware acceleration
+-bilinear-filter      Enable OpenGL bilinear filtering
+-no-bilinear-filter   Disable OpenGL bilinear filtering
+-opengl-lib <path>    Use a custom OpenGL shared library
 -proto80              Emulate a prototype 80 column board for the 1090
 -xep80                Emulate the XEP80
 -xep80port <n>        Use XEP80 on joystick port <n>
+-af80                 Emulate the Austin Franklin 80 column board
 
 
 X11 options
@@ -273,6 +335,7 @@ F8                   Enter monitor
 F9                   Exit emulator
 F10                  Save screenshot
 Shift+F10            Save interlaced screenshot
+F12                  Turbo mode
 Alt+R                Run Atari program
 Alt+D                Disk management
 Alt+C                Cartridge management
@@ -387,34 +450,42 @@ SDL keyboard, joystick and other controllers
 LSUPER     Atari/Inverse key (unusable under Windows)
 RSUPER     CapsToggle (+Shift = CapsLock)
 
-LAlt+F     Switch fullscreen (probably doesn't work in Windows)
-LAlt+G     Switch WIDTH_MODE (so you can set 320x240)
-LAlt+B     Switch BLACK-AND-WHITE
+LAlt+F     Switch fullscreen
+LAlt+G     Switch visible horizontal area. See -horiz-area.
 LAlt+J     Swap joysticks 0 and 1
-LAlt+E     Switch bpp (for debug only, will be removed soon)
 LAlt+M     Grab mouse (prevents mouse pointer from leaving the window)
 
-These keys work with the NTSC composite video emualtion (-ntscemu):
-(This interface should be considered experimental and is subject to change)
-LAlt+1     Decrease NTSC sharpness 
-LAlt+2     Increase NTSC sharpness 
-LAlt+3     Decrease NTSC saturation (like TV Colour control)
-LAlt+4     Increase NTSC saturation
-LAlt+5     Decrease NTSC brightness (also called black level)
-LAlt+6     Increase NTSC brightness
-LAlt+7     Decrease NTSC contrast (also called white level) 
-LAlt+8     Increase NTSC contrast
-LAlt+9     Decrease NTSC burst phase (use this to change artifacting colours) 
-LAlt+0     Increase NTSC burst phase
-LAlt+-     Decrease NTSC Gaussian factor (ghosting, sharpness, artif colours)
-LAlt+=     Increase NTSC Gaussian factor (ghosting, sharpness, artif colours)
-LAlt+[     Decrease scanlines percentage (NTSC mode only)
-LAlt+]     Increase scanlines percentage (NTSC mode only)
-LAlt+;     Decrease NTSC hue (like TV Tint control)
-LAlt+'     Increase NTSC hue (like TV Tint control)
-LAlt+Ins   Decrease NTSC saturation ramp(reduce saturation for bright colours) 
-LAlt+Ins   Increase NTSC saturation ramp(reduce saturation for bright colours) 
-LAlt+Shift+X Enable/disable XEP80 screen (use with -xep80)
+LAlt+LShift+1     Decrease hue (like TV Tint control, only NTSC)
+LAlt+1            Increase hue
+LAlt+LShift+2     Decrease saturation (like TV Colour control)
+LAlt+2            Increase saturation
+LAlt+LShift+3     Decrease contrast (also called white level)
+LAlt+3            Increase contrast
+LAlt+LShift+4     Decrease brightness (also called black level)
+LAlt+4            Increase brightness
+LAlt+LShift+5     Decrease gamma adjustment
+LAlt+5            Increase gamma adjustment
+LAlt+LShift+6     Decrease color delay (Atari color adjustment potentiometer, only NTSC)
+LAlt+6            Increase color delay
+
+The following keys work only in the NTSC filter mode (-ntscemu):
+LAlt+LShift+7     Decrease sharpness
+LAlt+7            Increase sharpness
+LAlt+LShift+8     Decrease resolution
+LAlt+8            Increase resolution
+LAlt+LShift+9     Decrease artifacts
+LAlt+9            Increase artifacts
+LAlt+LShift+0     Decrease fringing
+LAlt+0            Increase fringing
+LAlt+LShift+-     Decrease bleed
+LAlt+-            Increase bleed
+LAlt+LShift+=     Decrease burst phase (use this to change artifacting colours)
+LAlt+=            Increase burst phase
+LAlt+LShift+[     Decrease scanlines percentage
+LAlt+[            Increase scanlines percentage
+LAlt+]            Toggle NTSC composite/S-Video/RGB/monochrome settings
+ 
+LAlt+Shift+X      Enable/disable 80 column screen (for -xep80/-af80/-proto80)
 
 Apart from standard joysticks (handled by the SDL) up to two keyboard joysticks
 are supported. The keys used for joystick directions and the trigger can be

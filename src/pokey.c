@@ -26,7 +26,7 @@
 #ifdef HAVE_TIME_H
 #include <time.h>
 #endif
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 #include <windows.h>
 #endif
 
@@ -49,6 +49,11 @@
 #include "log.h"
 #include "input.h"
 #include "pbi.h"
+
+#ifdef VOICEBOX
+#include "voicebox.h"
+#include "votraxsnd.h"
+#endif
 
 #ifdef POKEY_UPDATE
 void pokey_update(void);
@@ -143,6 +148,11 @@ UBYTE POKEY_GetByte(UWORD addr)
 		break;
 	case POKEY_OFFSET_SKSTAT:
 		byte = POKEY_SKSTAT + (CASSETTE_IOLineStatus() << 4);
+#ifdef VOICEBOX
+		if (VOICEBOX_enabled) {
+			byte = POKEY_SKSTAT + (VOTRAXSND_busy  << 4);
+		}
+#endif
 		break;
 	}
 
@@ -249,6 +259,9 @@ void POKEY_PutByte(UWORD addr, UBYTE byte)
 			pot_scanline = 0;	/* slow pot mode */
 		break;
 	case POKEY_OFFSET_SEROUT:
+#ifdef VOICEBOX
+		VOICEBOX_SEROUTPutByte(byte);
+#endif
 		if ((POKEY_SKCTL & 0x70) == 0x20 && POKEY_siocheck())
 			SIO_PutByte(byte);
 		/* check if cassette 2-tone mode has been enabled */
@@ -287,6 +300,9 @@ void POKEY_PutByte(UWORD addr, UBYTE byte)
 #endif
 		break;
 	case POKEY_OFFSET_SKCTL:
+#ifdef VOICEBOX
+		VOICEBOX_SKCTLPutByte(byte);
+#endif
 		POKEY_SKCTL = byte;
 		POKEYSND_Update(POKEY_OFFSET_SKCTL, byte, 0, SOUND_GAIN);
 		if (byte & 4)
@@ -398,7 +414,7 @@ int POKEY_Initialise(int *argc, char *argv[])
 #endif
 	{
 		random_scanline_counter =
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 		GetTickCount() % POKEY_POLY17_SIZE;
 #elif defined(HAVE_TIME)
 		time(NULL) % POKEY_POLY17_SIZE;

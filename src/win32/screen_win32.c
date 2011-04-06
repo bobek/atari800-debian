@@ -23,68 +23,221 @@
 */
 
 #include "config.h"
-#define DIRECTDRAW_VERSION 0x0500
+
+#define DIRECTDRAW_VERSION   0x0500
+#define DIRECTINPUT_VERSION  0x0500
 #define WIN32_LEAN_AND_MEAN
+#define DW_WINDOWSTYLE WS_TILEDWINDOW | WS_SIZEBOX | WS_DLGFRAME
+
+#define DISP_CHANGE_NOMODE -6
+
 #include <windows.h>
-#include <ddraw.h>
+#include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 
 #include "atari.h"
 #include "colours.h"
 #include "log.h"
-#include "screen.h"
 #include "util.h"
+#include "keyboard.h"
+#include "screen.h"
+#include "sound.h"
+#include "main_menu.h"
+#include "ui.h"
 
-#include "main.h"
 #include "screen_win32.h"
-#include "platform.h"
+#include "main.h"
+#include "render_gdi.h"
+#include "render_gdiplus.h"
+#include "render_directdraw.h"
+#include "render_direct3d.h"
 
-#define SHOWFRAME 0
-
-int windowed = FALSE;
-
-static LPDIRECTDRAW4 lpDD = NULL;
-static LPDIRECTDRAWSURFACE4 lpDDSPrimary = NULL;
-static LPDIRECTDRAWSURFACE4 lpDDSBack = NULL;
-static LPDIRECTDRAWSURFACE4 lpDDSsrc = NULL;
-static LPDIRECTDRAWPALETTE lpDDPal = NULL;
-
-#define MAX_CLR 0x100
-static PALETTEENTRY pal[MAX_CLR]; /* palette */
-
-static int linesize = 0;
-static int scrwidth = 320;
-static int scrheight = 240;
-static UBYTE *scraddr = NULL;
+static RECT currentwindowrect = {0,0,0,0};
+static WINDOWPLACEMENT currentwindowstate;
+static HCURSOR cursor;
+static BOOL refreshframeparams = TRUE;  
+static int scaledWidth = 0;
+static int scaledHeight = 0;
 static int bltgfx = 0;
+static int scrwidth = SCREENWIDTH;
+static int scrheight = SCREENHEIGHT;
+
+RENDERMODE rendermode = GDI;
+DISPLAYMODE displaymode = GDI_NEARESTNEIGHBOR;
+FSRESOLUTION fsresolution = DESKTOP;
+SCREENMODE screenmode = WINDOW;
+ASPECTMODE scalingmethod = NORMAL;
+ASPECTRATIO aspectmode = AUTO;
+FRAMEPARAMS frameparams;
+CROP crop;
+OFFSET offset;
+BOOL hidecursor = FALSE;
+BOOL lockaspect = FALSE;
+BOOL usecustomfsresolution = FALSE;
+BOOL showmenu = TRUE;
+int cropamount = 0;
+int windowscale = 200;
+int currentscale = 200;
+int fullscreenWidth = 0;
+int fullscreenHeight = 0;
+int origScreenWidth = 0;
+int origScreenHeight = 0;
+int origScreenDepth = 0; 
 
 void groff(void)
 {
-	if (lpDD != NULL) {
-		if (lpDDSsrc != NULL) {
-			IDirectDrawSurface4_Release(lpDDSsrc);
-			lpDDSsrc = NULL;
-		}
-		if (lpDDSPrimary != NULL) {
-			IDirectDrawSurface4_Release(lpDDSPrimary);
-			lpDDSPrimary = NULL;
-		}
-		if (lpDDPal != NULL) {
-			IDirectDrawPalette_Release(lpDDPal);
-			lpDDPal = NULL;
-		}
-		IDirectDraw4_Release(lpDD);
-		lpDD = NULL;
+	switch (rendermode)
+	{
+		case GDI:
+			DestroyWindow(hWndMain);
+		case DIRECTDRAW:
+			shutdowndirectdraw();
+			break;
+		case GDIPLUS:
+			DestroyWindow(hWndMain);	
+			shutdowngdiplus();
+			break;
+		case DIRECT3D:
+			DestroyWindow(hWndMain); 
+			shutdowndirect3d();
+			break;			
 	}
 }
 
-/* LRESULT CALLBACK Atari_WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam); */  /* in main.c */
+void refreshframe()
+{
+	refreshframeparams = TRUE;
+}
+
+void setcursor()
+{
+	if (screenmode == WINDOW)
+		while (ShowCursor(TRUE) < 0) {}
+	else if (hidecursor)
+		while (ShowCursor(FALSE) > -1) {}
+	else if (UI_is_active)		
+		while (ShowCursor(TRUE) < 0) {}
+	else 
+		while (ShowCursor(FALSE) > -1) {}
+}
+
+RENDERMODE GetRenderMode() {
+	return rendermode;
+}
+
+DISPLAYMODE GetDisplayMode() {
+	return displaymode;
+}
+
+SCREENMODE GetScreenMode() {
+	return screenmode;
+}
+
+void GetDisplayModeName(char *name) {
+
+	switch (displaymode) {
+		case GDI_NEARESTNEIGHBOR:
+			sprintf(name, "%s", "GDI");
+			break;
+		case GDIPLUS_NEARESTNEIGHBOR:
+			sprintf(name, "%s", "GDI+");
+			break;
+		case GDIPLUS_BILINEAR:
+			sprintf(name, "%s", "GDI+/Bilinear");
+			break;
+		case GDIPLUS_HQBICUBIC:
+			sprintf(name, "%s", "GDI+/Bicubic(HQ)");
+			break;
+		case DIRECT3D_NEARESTNEIGHBOR:
+			sprintf(name, "%s", "Direct3D");
+			break;
+		case DIRECT3D_BILINEAR:
+			sprintf(name, "%s", "Direct3D/Bilinear");
+			break;
+		case GDIPLUS_HQBILINEAR:
+			sprintf(name, "%s", "GDI+/Bilinear(HQ)");
+			break;
+		case GDIPLUS_BICUBIC:
+			sprintf(name, "%s", "GDI+/Bicubic");
+			break;
+	}
+}
+
+DISPLAYMODE GetActiveDisplayMode() {
+	
+	DISPLAYMODE retval;
+	
+	if (rendermode == GDI && frameparams.filter == NEARESTNEIGHBOR)
+		retval = GDI_NEARESTNEIGHBOR;
+	else if (rendermode == GDIPLUS && frameparams.filter == NEARESTNEIGHBOR)
+		retval = GDIPLUS_NEARESTNEIGHBOR;
+	else if (rendermode == GDIPLUS && frameparams.filter == BILINEAR)
+		retval = GDIPLUS_BILINEAR;
+	else if (rendermode == GDIPLUS && frameparams.filter == HQBICUBIC)
+		retval = GDIPLUS_HQBICUBIC;
+	else if (rendermode == DIRECT3D && frameparams.filter == NEARESTNEIGHBOR)
+		retval = DIRECT3D_NEARESTNEIGHBOR;
+	else if (rendermode == DIRECT3D && frameparams.filter == BILINEAR)
+		retval = DIRECT3D_BILINEAR;
+	else if (rendermode == GDIPLUS && frameparams.filter == HQBILINEAR)
+		retval = GDIPLUS_HQBILINEAR;
+	else if (rendermode == GDIPLUS && frameparams.filter == BICUBIC)
+		retval = GDIPLUS_BICUBIC;
+		
+	return retval;
+}
+
+void SetDisplayMode(DISPLAYMODE dm) {
+	
+	displaymode = dm;
+	
+	switch (dm) {
+		case GDI_NEARESTNEIGHBOR:
+			rendermode = GDI;
+			frameparams.filter = NEARESTNEIGHBOR;
+			break;
+		case GDIPLUS_NEARESTNEIGHBOR:
+			rendermode = GDIPLUS;
+			frameparams.filter = NEARESTNEIGHBOR;
+			break;
+		case GDIPLUS_BILINEAR:
+			rendermode = GDIPLUS;
+			frameparams.filter = BILINEAR;
+			break;
+		case GDIPLUS_HQBICUBIC:
+			rendermode = GDIPLUS;
+			frameparams.filter = HQBICUBIC;
+			break;
+		case DIRECT3D_NEARESTNEIGHBOR:
+			rendermode = DIRECT3D;
+			frameparams.filter = NEARESTNEIGHBOR;
+			break;
+		case DIRECT3D_BILINEAR:
+			rendermode = DIRECT3D;
+			frameparams.filter = BILINEAR;
+			break;
+		case GDIPLUS_HQBILINEAR:
+			rendermode = GDIPLUS;
+			frameparams.filter = HQBILINEAR;
+			break;
+		case GDIPLUS_BICUBIC:
+			rendermode = GDIPLUS;
+			frameparams.filter = BICUBIC;
+			break;			
+	}
+}
 
 static BOOL initwin(void)
 {
+	LONG retval;
+	RECT windowRect = {0,0,0,0};
+	int xpos, ypos;
+	static DEVMODE dmDevMode;
+	char msgbuffer[200];
 	WNDCLASS wc;
 
-	wc.style = CS_HREDRAW | CS_VREDRAW;
+	wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
 	wc.lpfnWndProc = Atari_WindowProc;
 	wc.cbClsExtra = 0;
 	wc.cbWndExtra = 0;
@@ -94,341 +247,984 @@ static BOOL initwin(void)
 	wc.hbrBackground = GetStockObject(BLACK_BRUSH);
 	wc.lpszMenuName = myname;
 	wc.lpszClassName = myname;
+	
 	RegisterClass(&wc);
+	setmenu();
 
-	if (windowed) {
-		hWndMain = CreateWindowEx(
-			0, myname, myname, WS_TILEDWINDOW | WS_SIZEBOX | WS_DLGFRAME, CW_USEDEFAULT, CW_USEDEFAULT,
-			GetSystemMetrics(SM_CXSCREEN) / 2, GetSystemMetrics(SM_CYSCREEN) / 2,
-			NULL, NULL, myInstance, NULL);
+	// save the original screen resolution settings
+	if (!origScreenWidth && !origScreenHeight)
+	{
+		// Get current display settings
+		EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &dmDevMode);
+		origScreenWidth = dmDevMode.dmPelsWidth;
+		origScreenHeight = dmDevMode.dmPelsHeight;
+		origScreenDepth = dmDevMode.dmBitsPerPel;
 	}
-	else {
+
+	// display to a window
+	if (rendermode != DIRECTDRAW && screenmode == WINDOW) 
+	{
+		// If the screen resolution has changed (due, perhaps, to switching into 
+		// fullscreen mode), return to the original screen resolution.
+		retval = ChangeDisplaySettings(NULL, 0);
+		
+		// compute a properly scaled client rect for our new window
+		getscaledrect(&windowRect);
+		scaledWidth = windowRect.right - windowRect.left;
+		scaledHeight = windowRect.bottom - windowRect.top;
+
+		// get the coordinates necessary to center the rectangle
+		getcenteredcoords(windowRect, &xpos, &ypos);
+		
+		hWndMain = CreateWindowEx(0, myname, myname, DW_WINDOWSTYLE, xpos, ypos,
+			                  scaledWidth, scaledHeight, NULL, hMainMenu, myInstance, NULL );
+	}
+	else  // display as fullscreen
+	{
+		// User has specified a custom fullscreen screen resolution.
+		// Scan all supported graphics mode for the one that best
+		// matches the requested resolution.
+		if (usecustomfsresolution) {		
+			int  i, nModeExists;			
+
+			for (i=0; ;i++) {
+				nModeExists = EnumDisplaySettings(NULL, i, &dmDevMode);
+				
+				if (!nModeExists) {
+					// we've reached the end of the list
+					retval = DISP_CHANGE_NOMODE;
+					break;
+				}
+				else {
+					// look for a graphics mode that matches our requested resolution
+					// and has a pixel depth equal to the original screen mode.
+				    if (dmDevMode.dmPelsWidth == fullscreenWidth &&
+					    dmDevMode.dmPelsHeight == fullscreenHeight &&
+					    dmDevMode.dmBitsPerPel == origScreenDepth)	{
+						
+						// Change the resolution now.
+						// Using CDS_FULLSCREEN means that this resolution is temporary, so Windows 
+						// rather than us, will take care of resetting this back to the default when we
+						// exit the application.
+						retval = ChangeDisplaySettings(&dmDevMode, CDS_FULLSCREEN);
+						break;
+					}
+				}
+			}
+		}
+		else  // no custom screen resolution was specified.
+		{
+			// Check current resolution and change it back to the default
+			// if it is different from the current fullscreen settings.
+			EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &dmDevMode);
+			if (dmDevMode.dmPelsWidth != fullscreenWidth ||
+				dmDevMode.dmPelsHeight != fullscreenHeight ||
+				dmDevMode.dmBitsPerPel != origScreenDepth)	{
+				retval = ChangeDisplaySettings(NULL, 0);
+				fullscreenWidth = dmDevMode.dmPelsWidth;
+				fullscreenHeight = dmDevMode.dmPelsHeight;
+			}
+			else 
+				retval = DISP_CHANGE_SUCCESSFUL;
+		}
+
+		// create an empty fullscreen window
 		hWndMain = CreateWindowEx(
-			0, myname, myname, WS_POPUP, 0, 0,
+			WS_EX_TOPMOST, myname, myname, WS_POPUP, 0, 0,
 			GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
 			NULL, NULL, myInstance, NULL);
-	}
+		
+		// If we were unsuccessful in changing the resolution, report this to the user,
+		// Then attempt to recover by returning to window mode.
+		if (retval != DISP_CHANGE_SUCCESSFUL) {
+			sprintf(msgbuffer, "Error %d.\n\nCould not change resolution\nto requested size: %dx%d.\n\nReturning to window mode.\nPlease check your settings.",
+					retval, fullscreenWidth, fullscreenHeight);
+			MessageBox(hWndMain, msgbuffer, myname, MB_OK);
+			
+			// Restore screen to window state
+			screenmode = WINDOW;
+			retval = ChangeDisplaySettings(NULL, 0);
+			
+			getcenteredcoords(windowRect, &xpos, &ypos);
+			hWndMain = CreateWindowEx(0, myname, myname, DW_WINDOWSTYLE, xpos, ypos,
+			                  scaledWidth, scaledHeight, NULL, hMainMenu, myInstance, NULL );							  
+		}
 
+		setcursor();
+	}
+	
 	if (!hWndMain)
 		return 1;
+		
 	return 0;
 }
 
-static int initFail(HWND hwnd, const char *func, HRESULT hr)
+// initialize menu the first time for a given window
+void initmenu(void)
 {
-	char txt[256];
-	sprintf(txt, "DirectDraw Init FAILED: %s returned 0x%x", func, (unsigned int)hr);
-	MessageBox(hwnd, txt, myname, MB_OK);
-	groff();
-	DestroyWindow(hwnd);
-	return 1;
+	hMainMenu = CreateMenu();
+	hFileMenu = CreateMenu();
+	hManageMenu = CreateMenu();
+	hSystemMenu = CreateMenu();
+	hDisplayMenu = CreateMenu();
+	hHelpMenu = CreateMenu();
+	SetMenu(hWndMain, hMainMenu);
+		
+	InsertMenu(hMainMenu, ID_FILE, MF_POPUP, (UINT)hFileMenu, "File");
+	AppendMenu(hFileMenu, MF_STRING, ID_RUN_ATARI_PROGRAM, "&Run Atari Program...\tAlt+R");
+	AppendMenu(hFileMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hFileMenu, MF_STRING, ID_RESET, "Reset (Warm Start)\tF5");
+	AppendMenu(hFileMenu, MF_STRING, ID_REBOOT, "Reboot (Cold Start)\tShift+F5");
+	AppendMenu(hFileMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hFileMenu, MF_STRING, ID_CONFIGURATION, "Configuration...\tF1");
+	AppendMenu(hFileMenu, MF_STRING, ID_SAVE_CONFIG, "Save Configuration");
+	AppendMenu(hFileMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hFileMenu, MF_STRING, ID_BACK, "Back\tEsc");
+	AppendMenu(hFileMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hFileMenu, MF_STRING, ID_EXIT, "Exit\tF9");
+	
+	InsertMenu(hMainMenu, ID_MANAGE, MF_POPUP, (UINT)hManageMenu, "Manage");	
+	AppendMenu(hManageMenu, MF_STRING, ID_DISK_MANAGEMENT, "&Disks...\tAlt+D");
+	AppendMenu(hManageMenu, MF_STRING, ID_CART_MANAGEMENT, "&Cartridges...\tAlt+C");
+	AppendMenu(hManageMenu, MF_STRING, ID_TAPE_MANAGEMENT, "Tapes...");
+	AppendMenu(hManageMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hManageMenu, MF_STRING, ID_EMULATOR_BIOS, "Emulator/BIOS...");
+	
+	InsertMenu(hMainMenu, ID_SYSTEM, MF_POPUP, (UINT)hSystemMenu, "System");	
+	AppendMenu(hSystemMenu, MF_STRING, ID_NTSC, "NTSC");
+	AppendMenu(hSystemMenu, MF_STRING, ID_PAL, "PAL");
+	AppendMenu(hSystemMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hSystemMenu, MF_STRING, ID_SELECT_MACHINE, "Select Machine...\tAlt+Y");
+	AppendMenu(hSystemMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hSystemMenu, MF_STRING, ID_SOUND, "Sound...\tAlt+O");
+	AppendMenu(hSystemMenu, MF_STRING, ID_CONTROLLERS, "Controllers...");	
+	if (Atari800_tv_mode == Atari800_TV_NTSC) {
+		CheckMenuItem(hSystemMenu, ID_NTSC, MF_CHECKED);
+		CheckMenuItem(hSystemMenu, ID_PAL, MF_UNCHECKED);
+	}
+	else {
+		CheckMenuItem(hSystemMenu, ID_NTSC, MF_UNCHECKED);
+		CheckMenuItem(hSystemMenu, ID_PAL, MF_CHECKED);
+	}
+	
+	InsertMenu(hMainMenu, ID_DISPLAY, MF_POPUP, (UINT)hDisplayMenu, "Display");	
+	AppendMenu(hDisplayMenu, MF_STRING, ID_FULLSCREEN, "Toggle Fullscreen\tAlt+Enter");
+	AppendMenu(hDisplayMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hDisplayMenu, MF_STRING, ID_WINDOW_SIZE_UP, "Increase Window Size\tAlt+PgUp");
+	AppendMenu(hDisplayMenu, MF_STRING, ID_WINDOW_SIZE_DOWN, "Decrease Window Size\tAlt+PgDn");
+	AppendMenu(hDisplayMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hDisplayMenu, MF_STRING, ID_ATARI_DISPLAY, "General Display Settings...");
+	AppendMenu(hDisplayMenu, MF_STRING, ID_WINDOWS_DISPLAY, "Windows Display Options...");
+	
+	InsertMenu(hMainMenu, ID_HELP, MF_POPUP, (UINT)hHelpMenu, "Help");	
+	AppendMenu(hHelpMenu, MF_STRING, ID_FUNCTION_KEY_HELP, "Function Key List...");
+	AppendMenu(hHelpMenu, MF_STRING, ID_HOT_KEY_HELP, "Hot Key List...");	
+	AppendMenu(hHelpMenu, MF_SEPARATOR, 0, "");
+	AppendMenu(hHelpMenu, MF_STRING, ID_ABOUT_ATARI800, "About Atari800...\tAlt+A");
 }
 
+// restore a previously initialized menu to the window
+void restoremenu(void)
+{
+	// menus are never shown in fullscreen mode
+	if (screenmode == FULLSCREEN)
+		return;
+		
+	LoadMenu((HINSTANCE)hWndMain, (LPCSTR)hMainMenu);
+	SetMenu(hWndMain, hMainMenu);
+}
+
+// remove menu from the window
+void destroymenu(void)
+{
+	SetMenu(hWndMain, NULL);
+	DestroyMenu((HMENU)hWndMain);
+}
+
+// set the menu based on the current state
+void setmenu(void)
+{	
+	if (showmenu && !hMainMenu)
+		initmenu();
+	else if (showmenu)
+		restoremenu();
+	else if (!showmenu)
+		destroymenu();
+		
+	changewindowsize(RESET, 0);
+}
+
+// switch menu on or off
+void togglemenustate(void)
+{	
+	showmenu = !showmenu;
+	setmenu();
+}
+
+// helper function that creates a scaled rectangle with the exact client area that we want.
+void getscaledrect(RECT *rect)
+{
+	// This function is intended for windowed mode only
+	if (screenmode == FULLSCREEN)
+		return;
+		
+	// Set base window size based on selected aspect mode
+	if (aspectmode == WIDE || aspectmode == AUTO) {
+	
+		// Enforce strict 7:5 aspect dimensions for the window
+		// if the aspect ratio is locked.
+		if (lockaspect) {
+		    scrwidth = SCREENWIDTH;
+			scrheight = SCREENHEIGHT;
+		}
+		else  
+		{
+			// Otherwise allow dimensions of the window to dynamically 
+			// vary based on the crop.horizontal and crop.vertical values.
+			scrwidth = SCREENWIDTH - crop.horizontal * 2;
+			scrheight = SCREENHEIGHT - crop.vertical * 2;
+		}
+	}
+	else {  // a cropped mode was selected
+	    if (lockaspect) {		
+			// Enforce strict 4:3 aspect dimensions for the window
+			scrwidth = CROPPEDWIDTH;
+			scrheight = SCREENHEIGHT;
+		}
+		else {
+			// Allow dimensions of the window to dynamically vary
+			// based on the crop.horizontal and crop.vertical values.
+			scrwidth = CROPPEDWIDTH - crop.horizontal * 2;
+			scrheight = SCREENHEIGHT - crop.vertical * 2;
+		}
+	}
+	
+	// now scale the window dimensions based on the windowscale 
+	scaledWidth = (int)(scrwidth * windowscale / 100.0f);
+	scaledHeight = (int)(scrheight * windowscale / 100.0f);
+
+	// prevent the scaled size from exceeding the screen resolution
+	if (scaledWidth > GetSystemMetrics(SM_CXSCREEN) || scaledHeight > GetSystemMetrics(SM_CYSCREEN))
+	{
+		scaledWidth = GetSystemMetrics(SM_CXSCREEN);
+		scaledHeight = GetSystemMetrics(SM_CYSCREEN);
+	}				
+	
+	// set a preliminary scaled rectangle
+	// to the calculated size...
+	rect->right = scaledWidth;
+	rect->bottom = scaledHeight;
+
+	// To avoid screen artifacts in windowed mode, especially when using scanlines, it is important
+	// that the client area of the window is of the exact scaled dimensions.  CreateWindow/MoveWindow by itself
+	// does not do this, therefore, we need the AdjustWindowRectEx() method to help enforce the dimensions.
+	AdjustWindowRectEx(rect, DW_WINDOWSTYLE, showmenu, 0);
+}
+
+static void cmdlineFail(char msg[])
+{
+	char txt[256];
+	sprintf(txt, "There was an invalid or missing argument\nfor commandline parameter: %s\nThe emulator may not run as expected.", msg);
+	MessageBox(NULL, txt, "Commandline Error", MB_OK | MB_ICONWARNING);
+}
+
+// switches to the next scanline mode
+void changescanlinemode()
+{
+	frameparams.scanlinemode++;
+	if (frameparams.scanlinemode == HIGH + 1)
+		frameparams.scanlinemode = NONE;
+   
+	// Force rewrite frame parameters
+	refreshframe(); 
+
+	return; 
+}
+
+// Change the 3D tilt effect to the next mode
+// This only has an effect in Direct3D mode
+void changetiltlevel()
+{
+	frameparams.tiltlevel++;
+	if (frameparams.tiltlevel > TILTLEVEL3)
+		frameparams.tiltlevel = TILTLEVEL0;
+}
+
+// Turns the 3D screensaver on or off.
+// This only has an effect in Direct3D mode
+void togglescreensaver()
+{
+	if (rendermode == DIRECT3D)
+	{
+		frameparams.screensaver = !frameparams.screensaver;
+		frameparams.d3dRefresh = TRUE;
+	}
+}
+
+// toggle between fullscreen and windowed modes
+void togglewindowstate()
+{
+	int showCmd = SW_RESTORE;
+
+	// not supported in DirectDraw mode
+	if (rendermode == DIRECTDRAW) 
+		return;
+
+	// when the window is destroyed, we lose its keyboard handler
+	// so let's uninit it here and reinit after we create the new window.
+	uninitinput();	
+	
+	if (screenmode == FULLSCREEN)	{   
+		screenmode = WINDOW; /* switch to windowed mode */
+	}
+	else {  // switch to fullscreen   
+  
+		// ...also save the current windowed state
+		// in case we need to return to it from fullscreen.
+		GetWindowRect(hWndMain, &currentwindowrect);
+		currentwindowstate.length = sizeof(WINDOWPLACEMENT);
+		GetWindowPlacement(hWndMain, &currentwindowstate);
+
+		screenmode = FULLSCREEN;  /* keep screenmode sync'ed with mode */
+	}
+ 
+	SuppressNextQuitMessage(); // prevents DestroyWindow from closing the application
+	destroymenu();
+	DestroyWindow(hWndMain);
+	initwin();
+
+	/* if we're in Direct3D rendering mode, we need to do a full 
+	   shutdown and restart of the Direct3D engine. */
+	if (rendermode == DIRECT3D) {
+		shutdowndirect3d();	   
+
+		if (screenmode == FULLSCREEN)
+			startupdirect3d(fullscreenWidth, fullscreenHeight, FALSE, &frameparams);
+		else 
+			startupdirect3d(currentwindowrect.right - currentwindowrect.left,
+					currentwindowrect.bottom - currentwindowrect.top, TRUE, &frameparams);
+	}
+
+	// if we're returning to windowed mode, restore it to its previous size and location.
+    // If not, use the default metrics. 
+	if (screenmode == WINDOW && currentwindowrect.bottom && currentwindowrect.right) 
+	{
+		MoveWindow(hWndMain, currentwindowrect.left, currentwindowrect.top,
+				   currentwindowrect.right - currentwindowrect.left,
+		    	   currentwindowrect.bottom - currentwindowrect.top, TRUE);
+		
+		if (currentwindowstate.showCmd == SW_SHOWMAXIMIZED)
+			   showCmd = SW_MAXIMIZE;	
+
+		changewindowsize(RESET, 0);
+	}
+	
+	ShowWindow(hWndMain, showCmd);
+	setmenu();
+	
+	// keep sound muted in UI
+	if (UI_is_active)
+		Sound_Pause();
+
+	// reinit the keyboard input and clear it
+	initinput();
+	clearkb();
+	
+	setcursor(); 
+
+	return;
+}
+
+/* 'scale' is expressed as a percentage (100 = 100%)     */
+/* CHANGEWINDOWSIZE indicates whether to STEPUP or STEPDOWN */
+/* by the scale percentage, or to just simply SET or RESET it. */
+/* Note that when the RESET parameter is used, the scale parameter */
+/* is ignored. */
+void changewindowsize(CHANGEWINDOWSIZE cws, int scale)
+{
+	RECT rect = {0,0,0,0};
+	WINDOWPLACEMENT wndpl;
+	int xpos, ypos;
+	int originalwindowscale = windowscale;
+
+	// not supported in DirectDraw mode
+	if (rendermode == DIRECTDRAW) 
+		return;
+
+	// in simple mode, force scale stepping to 100% jumps
+	if (scalingmethod == SIMPLE && (cws == STEPUP || cws == STEPDOWN))
+		scale = 100;
+		
+	// don't change window size if window is maximized, minimized, or fullscreen
+	wndpl.length = sizeof(WINDOWPLACEMENT);
+	GetWindowPlacement(hWndMain, &wndpl);
+	if (wndpl.showCmd == SW_SHOWMAXIMIZED || wndpl.showCmd == SW_SHOWMINIMIZED || screenmode == FULLSCREEN)
+		return;		
+
+	switch (cws)
+	{
+		case STEPUP:
+			// adjust current windowscale as an even multiple of the scale parameter
+			windowscale = currentscale / scale * scale;
+			windowscale += scale;		     
+			break;
+
+		case STEPDOWN:
+			windowscale = currentscale / scale * scale;
+			if (windowscale == currentscale)
+				windowscale -= scale;
+			if (windowscale < 100) 
+			{
+				windowscale = 100;
+				return;
+			}
+			break;
+			
+		case SET:
+			windowscale = scale;
+			break;
+			
+		case RESET:
+			windowscale = currentscale; 
+	}
+
+	getscaledrect(&rect);
+
+	// we've oversized, so back off and get out
+	if ((rect.bottom - rect.top) > GetSystemMetrics(SM_CYSCREEN))
+	{
+		windowscale = originalwindowscale;
+		return;
+	}
+
+	// Position the new resized window relative to previous window position
+	xpos = wndpl.rcNormalPosition.left+
+	       (((wndpl.rcNormalPosition.right-wndpl.rcNormalPosition.left)-
+		   (rect.right-rect.left)) / 2);
+	
+	ypos = wndpl.rcNormalPosition.top+
+	       (((wndpl.rcNormalPosition.bottom-wndpl.rcNormalPosition.top)-
+		   (rect.bottom-rect.top)) / 2);
+	
+	MoveWindow(hWndMain, xpos, ypos,
+	           rect.right - rect.left, rect.bottom - rect.top, TRUE);
+	
+	return;
+}
+
+// Short helper function that computes an x,y position that can be used  
+// by MoveWindow to center a window having the given rectangle.
+void getcenteredcoords(RECT rect, int* x, int* y)
+{
+	*x = (GetSystemMetrics(SM_CXSCREEN) / 2) - ((rect.right - rect.left) / 2);
+	*y = (GetSystemMetrics(SM_CYSCREEN) / 2) - ((rect.bottom - rect.top) / 2);
+}
+
+// Returns the native atari coordinates given a set of windows coordinates.
+// These coordinates are relative to the full 384x240 screen buffer.
+// a coordinate of -1,-1 indicates a click outside the screen buffer.
+void getnativecoords(int mx, int my, int* nx, int* ny)
+{	
+	RECT rect;
+	float fx;
+	float fy;
+	
+	GetClientRect(hWndMain, &rect);
+	
+	// adjust input mouse coordinates based on client rectangle size
+	my = my - ((rect.bottom - rect.top) - frameparams.height) / 2;
+	mx = mx - ((rect.right - rect.left) - frameparams.width) / 2;
+	
+	// transform absolute mouse coordinates into relative coordinates
+	fx = (float)mx/frameparams.width;
+	fy = (float)my/frameparams.height;
+
+	// compute the absolute atari coordinates relative to the 
+	// 384x240 screen buffer accounting for offsets and cropping
+	*nx = (int)((frameparams.view.right - frameparams.view.left) * fx
+	            + frameparams.view.left);
+
+	*ny = (int)((frameparams.view.bottom - frameparams.view.top) * fy
+	            + frameparams.view.top);	
+
+	// force any points determined to be outside the screen buffer to -1,-1
+	*nx = (*nx < frameparams.view.left || *nx >= frameparams.view.right) ? -1 : *nx;
+	*ny = (*ny < frameparams.view.top || *ny >= frameparams.view.bottom) ? -1 : *ny;
+	
+	if (*nx <= -1 || *ny <= -1 || *nx >= Screen_WIDTH || *ny >= Screen_HEIGHT)
+		*nx = *ny = -1;	
+}
+
+// Parse the width and height from a string formated as
+// widthxheight (such as 800x600, 1280x720, etc.)
+BOOL getres(char res[], int *width, int *height)
+{
+	size_t pos;
+	char sep[] = "x";
+
+	pos = strcspn(res, sep);
+	if (pos == strlen(res))
+		return FALSE;	  // missing x delimiter	
+
+	*width = atoi(strtok(res, sep));
+	*height = atoi(strtok(NULL, sep));	
+
+	if (*width == 0 || *height == 0)
+		return FALSE;     // value could not be converted
+
+	return TRUE;	
+}
+
+// Process the commandline, then initialize the selected renderer
 int gron(int *argc, char *argv[])
 {
-	DDSURFACEDESC2 ddsd;
-	DDSCAPS2 ddscaps;
-	HRESULT ddrval;
 	int i, j;
-	int width = 0;
-	int help = FALSE;
+	int retvalue = 0;
+	RECT rect = {0,0,0,0};
+	int xpos, ypos;
 
+	// set some defaults
+	int width = 0;
+	int help_only = FALSE;
+	
+	// process commandline parameters and arguments
 	for (i = j = 1; i < *argc; i++) {
 		if (strcmp(argv[i], "-windowed") == 0)
-			windowed = TRUE;
-		else if (strcmp(argv[i], "-width") == 0)
+			screenmode = WINDOW;  
+		else if (strcmp(argv[i], "-width") == 0) {
+			rendermode = DIRECTDRAW;
 			width = Util_sscandec(argv[++i]);
-		else if (strcmp(argv[i], "-blt") == 0)
+		}
+		else if (strcmp(argv[i], "-blt") == 0) {
+			rendermode = DIRECTDRAW;
 			bltgfx = TRUE;
+		}
+		else if (strcmp(argv[i], "-hidecursor") == 0)
+			hidecursor = TRUE;
+		else if (strcmp(argv[i], "-lockaspect") == 0)
+			lockaspect = TRUE;
+		else if (strcmp(argv[i], "-fullscreen") == 0)
+			screenmode = FULLSCREEN;
+		else if (strcmp(argv[i], "-hidemenu") == 0)
+			showmenu = FALSE;
+		else if (strcmp(argv[i], "-winscale") == 0)
+			windowscale = Util_sscandec(argv[++i]);
+		else if (strcmp(argv[i], "-hcrop") == 0)
+			crop.horizontal = atoi(argv[++i]);
+		else if (strcmp(argv[i], "-vcrop") == 0)
+			crop.vertical = atoi(argv[++i]);
+		else if (strcmp(argv[i], "-crop") == 0) {
+			crop.horizontal = atoi(argv[++i]);
+			crop.vertical = atoi(argv[++i]);
+		}
+		else if (strcmp(argv[i], "-hoffset") == 0)
+			offset.horizontal = atoi(argv[++i]);
+		else if (strcmp(argv[i], "-voffset") == 0)
+			offset.vertical = atoi(argv[++i]);
+		else if (strcmp(argv[i], "-scanlines") == 0)
+		{
+			if (!checkparamarg(argv[++i]))
+				cmdlineFail(argv[i-1]);
+			else if (strcmp(argv[i], "low") == 0) 
+				frameparams.scanlinemode = LOW;
+			else if (strcmp(argv[i], "medium") == 0) 
+				frameparams.scanlinemode = MEDIUM;
+			else if (strcmp(argv[i], "high") == 0)
+				frameparams.scanlinemode = HIGH;
+		}
+		else if (strcmp(argv[i], "-render") == 0) 
+		{
+			if (!checkparamarg(argv[++i]))
+				cmdlineFail(argv[i-1]);
+			else if (strcmp(argv[i], "ddraw") == 0) 
+			{
+				rendermode = DIRECTDRAW;
+				bltgfx = TRUE;
+			}
+			else if (strcmp(argv[i], "gdi") == 0) {
+				frameparams.filter = NEARESTNEIGHBOR;
+				rendermode = GDI;
+			}
+			else if (strcmp(argv[i], "gdiplus") == 0) {
+				frameparams.filter = NEARESTNEIGHBOR;
+				rendermode = GDIPLUS;
+			}
+			else if (strcmp(argv[i], "direct3d") == 0) {
+				frameparams.filter = NEARESTNEIGHBOR;
+				rendermode = DIRECT3D;				
+			}
+		}
+		else if (strcmp(argv[i], "-filter") == 0) 
+		{
+			if (!checkparamarg(argv[++i]))
+				cmdlineFail(argv[i-1]);
+			else if (strcmp(argv[i], "pixel") == 0) 
+				frameparams.filter = NEARESTNEIGHBOR;
+			else if (strcmp(argv[i], "bilinear") == 0)
+				frameparams.filter = BILINEAR;
+			else if (strcmp(argv[i], "bicubic") == 0)
+				frameparams.filter = BICUBIC;
+			else if (strcmp(argv[i], "hqbilinear") == 0)
+				frameparams.filter = HQBILINEAR;
+			else if (strcmp(argv[i], "hqbicubic") == 0)
+				frameparams.filter = HQBICUBIC;
+		}
+		else if (strcmp(argv[i], "-scaling") == 0) 
+		{
+			if (!checkparamarg(argv[++i]))
+				cmdlineFail(argv[i-1]);
+			else if (strcmp(argv[i], "off") == 0)
+				scalingmethod = OFF;
+			else if (strcmp(argv[i], "normal") == 0) 
+				scalingmethod = NORMAL;
+			else if (strcmp(argv[i], "simple") == 0) 
+				scalingmethod = SIMPLE;
+			else if (strcmp(argv[i], "adaptive") == 0)
+				scalingmethod = ADAPTIVE;
+		}
+		else if (strcmp(argv[i], "-aspect") == 0) 
+		{
+			if (!checkparamarg(argv[++i]))
+				cmdlineFail(argv[i-1]);
+			else if (strcmp(argv[i], "auto") == 0)
+				aspectmode = AUTO;
+			else if (strcmp(argv[i], "wide") == 0) 
+				aspectmode = WIDE;
+			else if (strcmp(argv[i], "cropped") == 0) 
+				aspectmode = CROPPED;
+			else if (strcmp(argv[i], "compressed") == 0) 
+				aspectmode = COMPRESSED;
+		}
+		else if (strcmp(argv[i], "-fsres") == 0) {	
+			getres(argv[++i], &fullscreenWidth, &fullscreenHeight);
+			usecustomfsresolution = TRUE;
+		}
 		else {
 			if (strcmp(argv[i], "-help") == 0) {
 				Log_print("\t-windowed        Run in a window");
-				Log_print("\t-width <num>     Set display mode width");
-				Log_print("\t-blt             Use blitting to draw graphics");
-				help = TRUE;
+				Log_print("\t-width <num>     Set display mode width (ddraw mode only)");
+				Log_print("\t-blt             Use blitting to draw graphics (ddraw mode only)");
+				Log_print("\t-hidecursor      Always hide mouse cursor in fullscreen");
+				Log_print("\t-fullscreen      Run in fullscreen");
+				Log_print("\t-winscale <size> Default window size <100> <200> <300>... etc.");
+				Log_print("\t-scanlines <%%>   Scanline mode <low> <medium> <high>");
+				Log_print("\t-render <mode>   Render mode <ddraw> <gdi> <gdiplus> <direct3d>");
+				Log_print("\t-filter <mode>   Filter <bilinear> <bicubic> <hqbilinear> <hqbicubic>");
+				Log_print("\t-scaling <mode>  Scaling method <off> <normal> <simple> <adaptive>");
+				Log_print("\t-aspect <mode>   Aspect mode <auto> <wide> <cropped> <compressed>");
+				Log_print("\t-fsres <res>     Fullscale resolution <widthxheight> viz. <640x480>");
+				Log_print("\t-vcrop <amt>     Crop screen vertically <0..108>");
+				Log_print("\t-hcrop <amt>     Crop screen horizontally <-24..150>");
+				Log_print("\t-voffset <amt>   Offset screen vertically <-50..50>");
+				Log_print("\t-hoffset <amt>   Offset screen horizontally <-24..24>");
+				Log_print("\t-lockaspect      Lock aspect mode when trimming");
+				Log_print("\t-hidemenu        Hide Windows menu");
+				help_only = TRUE;
 			}
 			argv[j++] = argv[i];
 		}
 	}
+
+	if (help_only)
+		return FALSE;
+
 	*argc = j;
 
-	initwin();
-	if (help || windowed)
-		return 0;
+	displaymode = GetActiveDisplayMode();
+	
+	initwin();  // initialize a window
 
-	if (width > 0) {
-		scrwidth = width;
-		scrheight = width * 3 / 4;
+	// Do render mode-specific initialization
+	switch (rendermode)
+	{
+		case DIRECTDRAW:
+			retvalue = startupdirectdraw(bltgfx, width);
+			break;
+		case GDIPLUS:
+			startupgdiplus();
+			break;
+		case DIRECT3D:
+			if (screenmode == WINDOW) 
+			{
+				startupdirect3d(scaledWidth, scaledHeight, TRUE, &frameparams);
+			
+				// Direct3D overrides the creation of the Window, so we must
+				// manually rescale it to ensure it is the exact size we want.
+				getscaledrect(&rect);
+				getcenteredcoords(rect, &xpos, &ypos);	
+				MoveWindow(hWndMain, xpos, ypos, rect.right - rect.left,
+		   			       rect.bottom - rect.top, TRUE);
+			}
+			else if (screenmode == FULLSCREEN) 
+			{
+				startupdirect3d(fullscreenWidth, fullscreenHeight, FALSE, &frameparams);
+			}
+			break;
 	}
 
-	ddrval = DirectDrawCreate(NULL, (void *) &lpDD, NULL);
-	if (FAILED(ddrval))
-		return initFail(hWndMain, "DirectDrawCreate", ddrval);
-	ddrval = IDirectDraw4_QueryInterface(lpDD, &IID_IDirectDraw4, (void *) &lpDD);
-	if (FAILED(ddrval))
-		return initFail(hWndMain, "QueryInterface", ddrval);
-	ddrval = IDirectDraw4_SetCooperativeLevel(lpDD, hWndMain, DDSCL_EXCLUSIVE | DDSCL_FULLSCREEN);
-	if (FAILED(ddrval))
-		return initFail(hWndMain, "SetCooperativeLevel", ddrval);
-
-	if (bltgfx) {
-		memset(&ddsd, 0, sizeof(ddsd));
-		ddsd.dwSize = sizeof(ddsd);
-		ddrval = IDirectDraw4_GetDisplayMode(lpDD, &ddsd);
-		if (FAILED(ddrval))
-			return initFail(hWndMain, "GetDisplayMode", ddrval);
-		ddrval = IDirectDraw4_SetDisplayMode(lpDD, ddsd.dwWidth, ddsd.dwHeight, 32, 0, 0);
-	}
-	else {
-		ddrval = IDirectDraw4_SetDisplayMode(lpDD, scrwidth, scrheight, 8, 0, 0);
-	}
-	if (FAILED(ddrval)) {
-		if ((ddrval == DDERR_INVALIDMODE || ddrval == DDERR_UNSUPPORTED) && !bltgfx && width != 640) {
-			/* 320x240 results in DDERR_INVALIDMODE on my Win98SE / Radeon 9000 */
-			/* 320x240 results in DDERR_UNSUPPORTED on my WinXP / Toshiba laptop */
-			MessageBox(hWndMain,
-				"DirectDraw does not support the requested display mode.\n"
-				"Try running with \"-blt\" or \"-width 640\" on the command line.",
-				myname, MB_OK);
-			groff();
-			DestroyWindow(hWndMain);
-			return 1;
-		}
-		return initFail(hWndMain, "SetDisplayMode", ddrval);
-	}
-
-	memset(&ddsd, 0, sizeof(ddsd));
-	ddsd.dwSize = sizeof(ddsd);
-	ddsd.dwFlags = DDSD_CAPS | DDSD_BACKBUFFERCOUNT;
-	ddsd.ddsCaps.dwCaps = DDSCAPS_PRIMARYSURFACE | DDSCAPS_FLIP | DDSCAPS_COMPLEX;
-	ddsd.dwBackBufferCount = 1;
-	ddrval = IDirectDraw4_CreateSurface(lpDD, &ddsd, &lpDDSPrimary, NULL);
-	if (FAILED(ddrval))
-		return initFail(hWndMain, "CreateSurface", ddrval);
-	memset(&ddscaps, 0, sizeof(ddscaps));
-	ddscaps.dwCaps = DDSCAPS_BACKBUFFER;
-	ddrval = IDirectDrawSurface4_GetAttachedSurface(lpDDSPrimary, &ddscaps, &lpDDSBack);
-	if (FAILED(ddrval))
-		return initFail(hWndMain, "GetAttachedSurface", ddrval);
-
-	if (bltgfx) {
-		ddrval = IDirectDraw4_GetDisplayMode(lpDD, &ddsd);
-		if (FAILED(ddrval))
-			return initFail(hWndMain, "GetDisplayMode", ddrval);
-
-		ddsd.dwSize = sizeof(ddsd);
-		ddsd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT;
-		ddsd.dwWidth = 336;
-		ddsd.dwHeight = 252;
-		ddsd.ddsCaps.dwCaps = DDSCAPS_VIDEOMEMORY;
-		ddrval = IDirectDraw4_CreateSurface(lpDD, &ddsd, &lpDDSsrc, NULL);
-		if (FAILED(ddrval))
-			return initFail(hWndMain, "CreateSurface", ddrval);
-
-		ddrval = IDirectDrawSurface4_Lock(lpDDSsrc, NULL, &ddsd, DDLOCK_WAIT | DDLOCK_WRITEONLY, NULL);
-		if (FAILED(ddrval))
-			return initFail(hWndMain, "Lock", ddrval);
-
-		memset(ddsd.lpSurface, 0, ddsd.lPitch * ddsd.dwHeight);
-
-		ddrval = IDirectDrawSurface4_Unlock(lpDDSsrc, NULL);
-	}
-	else {
-		for (i = 0; i < MAX_CLR; i++)
-			palette(i, Colours_GetR(i), Colours_GetG(i), Colours_GetB(i));
-		IDirectDraw4_CreatePalette(lpDD, DDPCAPS_8BIT, pal, &lpDDPal, NULL);
-		if (lpDDPal)
-			IDirectDrawSurface4_SetPalette(lpDDSPrimary, lpDDPal);
-	}
-
-	return 0;
+	return retvalue;
 }
 
-void palupd(int beg, int cnt)
+// Refresh the frame -- called on every frame
+void refreshv(UBYTE *scr_ptr)
 {
-	IDirectDrawPalette_SetEntries(lpDDPal, 0, beg, cnt, pal);
-}
-
-void palette(int ent, UBYTE r, UBYTE g, UBYTE b)
-{
-	if (ent >= MAX_CLR)
-		return;
-	pal[ent].peRed = r;
-	pal[ent].peGreen = g;
-	pal[ent].peBlue = b;
-	pal[ent].peFlags = 0;
-}
-
-/* Platform-specific function to update the palette if it changed */
-void PLATFORM_PaletteUpdate(void)
-{
-	if(lpDDPal != NULL) {
-		int i;
-		for (i = 0; i < MAX_CLR; i++) {
-			palette(i, Colours_GetR(i), Colours_GetG(i), Colours_GetB(i));
-		}
-		palupd(0, MAX_CLR);
-	}
-}
-
-static void refreshv_win32api(UBYTE *scr_ptr)
-{
+	float fHorizAspect, fVertAspect;
 	PAINTSTRUCT ps;
-	HDC hdc;
-	HDC hCdc;
-	BITMAPINFO bi;
-	DWORD *bitmap_bits = NULL;
-	ULONG   ulWindowWidth, ulWindowHeight;      /* window width/height */
-	HBITMAP hBitmap;
+	INT nRectWidth, nRectHeight;
+	INT nBaseWidth, nBaseHeight;
+	INT i;
 	RECT rt;
-	int i;
-	int j;
+	
+	/* DirectDraw mode does not support windowed modes, or aspect ratio processing
+	   (nor much else for that matter), so redirect immediately to the DirectDraw renderer. */
+	if (rendermode == DIRECTDRAW)
+	{
+		refreshv_directdraw(scr_ptr, bltgfx);
+		return;
+	}
 
 	GetClientRect(hWndMain, &rt);
-	InvalidateRect(hWndMain, &rt, FALSE);
-	hdc = BeginPaint(hWndMain, &ps);
-	ulWindowWidth = rt.right - rt.left;
-	ulWindowHeight = rt.bottom - rt.top;
+	
+	if (refreshframeparams)
+		InvalidateRect(hWndMain, &rt, TRUE);   // blank screen to avoid artifacts
+	else
+		InvalidateRect(hWndMain, &rt, FALSE);  // don't blank screen
 
-	/* make sure we have at least some window size */
-	if ((!ulWindowWidth) || (!ulWindowHeight))
-		return;
+	// open the device context for painting
+	frameparams.hdc = BeginPaint(hWndMain, &ps);
+	
+	// Generic frame and window operations are performed inside this section.  
+	// In order to avoid performing all of this work on every frame, we only process 
+	// when a function has set the refreshframeparams flag to true.
+	if (refreshframeparams) 
+	{
+		nRectWidth = rt.right - rt.left;
+		nRectHeight = rt.bottom - rt.top;
+		frameparams.width = nRectWidth;
+		frameparams.height = nRectHeight;
+		frameparams.y_origin = 0;
+		frameparams.x_origin = 0;
+		frameparams.d3dRefresh = TRUE;
+		cropamount = 0;
 
-	bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER); /* structure size in bytes */
-	bi.bmiHeader.biWidth = Screen_WIDTH-48;
-	bi.bmiHeader.biHeight = Screen_HEIGHT;
-	bi.bmiHeader.biPlanes = 1;
-	bi.bmiHeader.biBitCount = 32;
-	bi.bmiHeader.biCompression = BI_RGB; /* BI_BITFIELDS OR BI_RGB??? */
-	bi.bmiHeader.biSizeImage = 0; /* for BI_RGB set to 0 */
-	bi.bmiHeader.biXPelsPerMeter = 2952; /* 75dpi=2952bpm */
-	bi.bmiHeader.biYPelsPerMeter = 2952; /* 75dpi=2952bpm */
-	bi.bmiHeader.biClrUsed = 0;
-	bi.bmiHeader.biClrImportant = 0;
+		// Scale and enforce aspect ratio
+		if (scalingmethod)
+		{
+			// Set standard 4:3 crop if we're running in crop mode.
+	        if (aspectmode == CROPPED) 
+	        {       
+				// 4:3 aspect ratio in CROPPED and AUTO/FULLSCREEN modes
+				// are created by specifying an 8 pixel horizontal crop.
+		        cropamount = STD_CROP; 
+			}
+			else if (aspectmode == AUTO && screenmode == FULLSCREEN)
+			{
+				// if we're in AUTO mode and fullscreen, then test the fullscreen
+				// aspect ratio to see whether we need to crop.
+				if ((float)fullscreenWidth / (float)fullscreenHeight < 7.0f/5.0f)
+					cropamount = STD_CROP; 
+			}
+			
+			// Set the *display* aspect ratio.  
+			// Wide modes are set nominally to an aspect ratio of 7:5         
+			if (aspectmode == WIDE || (aspectmode == AUTO && screenmode == WINDOW) ||
+			   (aspectmode == AUTO && screenmode == FULLSCREEN && cropamount == 0))
+			{
+				// Enforce a strict WIDE aspect ratio of 7:5 
+				// if the aspect ratio is locked.
+				if (lockaspect) {
+					fHorizAspect = 7.0f;   
+					fVertAspect = 5.0f;    
+				}
+				else { 
+					// Otherwise, allow aspect ratio to vary dynamically based on the 
+					// crop.horizontal and crop.vertical values.
+					fHorizAspect = (float)SCREENWIDTH - crop.horizontal * 2;
+					fVertAspect = (float)SCREENHEIGHT - crop.vertical * 2;
+				}
+			}
+			else // aspect must be COMPRESSED, CROPPED, or AUTO/FULLSCREEN/CROP               
+			{
+				// Enforce a strict 4:3 aspect ratio if aspect is locked.
+				if (lockaspect) { 
+					fHorizAspect = 4.0f;
+					fVertAspect = 3.0f;				
+				}
+				else {
+					// Allow aspect ratio to vary dynamically based on the 
+					// crop.horizontal and crop.vertical values if lockaspect is set to false.
+					fHorizAspect = (float)CROPPEDWIDTH - crop.horizontal * 2;
+					fVertAspect = (float)SCREENHEIGHT - crop.vertical * 2;
+				}
+			}
+		
+			if (screenmode == FULLSCREEN && scalingmethod == ADAPTIVE)
+			{
+				// ADAPTIVE scaling - 
+				// ** Intended for widescreen monitors that stretch non-native resolutions **:
+				// In fullscreen legacy (4:3) resolutions like VGA running on a 
+				// widescreen monitor, some users may want to squeeze the screen back into a 
+				// more normalized aspect if (and only if) the monitor stretches these resolutions. 
+				// To do this, we create a compensation aspect ratio based on the assumption 
+				// that the original screen resolution is the native resolution --  
+				// or at least one that has square (or nearly square) pixels. 
 
-	hCdc = CreateCompatibleDC(hdc);
-	hBitmap = CreateDIBSection(hCdc, &bi, DIB_RGB_COLORS, (void *)&bitmap_bits, NULL, 0);
-	if (!hBitmap) {
-		MessageBox(hWndMain, "Could not create bitmap", myname, MB_OK);
-		DestroyWindow(hWndMain);
-		return;
-	}
+				float fOrigAspect = (float)origScreenWidth / (float)origScreenHeight;
+				float fFullAspect = (float)fullscreenWidth / (float)fullscreenHeight;
+				float fAdjustedAspect = fFullAspect * fHorizAspect/fVertAspect;
+				float fCompensationAspect = fAdjustedAspect / fOrigAspect; 
+				float fCompensatedWidth = (float)fullscreenHeight * fCompensationAspect;
 
-	/* Copying the atari screen to bitmap. */
-	for (i = 0; i < Screen_HEIGHT; i++) {
-		for (j = 0; j < Screen_WIDTH - 48; j++) {
-			*bitmap_bits++ = Colours_table[*scr_ptr++];
+				frameparams.width = (int)fCompensatedWidth;
+				frameparams.height = fullscreenHeight;
+				frameparams.x_origin = (int)((nRectWidth - frameparams.width) / 2.0f); 
+			}
+			else if (scalingmethod == SIMPLE)
+			{       
+				// SIMPLE scaling
+				// This fullscreen mode sizes the Atari screen by a simple even multiple
+				// of its native size, and finds the largest that will fit within the 
+				// currently set client rectangle size.
+			
+                // Set the base height/width of Atari screen
+				// Account for possible cropping if the user has specified it.
+				if (lockaspect) { 
+					if (aspectmode == WIDE || (aspectmode == AUTO && cropamount == 0))
+						nBaseWidth = SCREENWIDTH;
+					else 
+						nBaseWidth = CROPPEDWIDTH;
+						
+					nBaseHeight = SCREENHEIGHT;
+				}
+				else {
+					if (aspectmode == WIDE || (aspectmode == AUTO && cropamount == 0))
+						nBaseWidth = SCREENWIDTH - crop.horizontal * 2;
+					else 
+						nBaseWidth = CROPPEDWIDTH - crop.horizontal * 2;
+					
+					nBaseHeight = SCREENHEIGHT - crop.vertical * 2;
+				}
+                            
+                // Find the largest even multiple of the Atari screen
+                // that will fit inside the client rectangle.
+                for (i = 1; ;i++) 
+					if (nBaseWidth * i > nRectWidth || nBaseHeight * i > nRectHeight)
+						break;
+                            
+                // Finally, set the frame size and location
+                frameparams.height = nBaseHeight * (i-1);
+                frameparams.width = nBaseWidth * (i-1);
+                frameparams.y_origin = (int)((nRectHeight - frameparams.height) / 2.0f);
+                frameparams.x_origin = (int)((nRectWidth - frameparams.width) / 2.0f);                        
+			}
+			else  // we're in either a window or fullscreen with NORMAL aspect processing
+			{
+				// we have a tall narrow window, so pin to the width and
+				// adjust the height to force the aspect ratio.
+				if (nRectHeight >= nRectWidth * fVertAspect/fHorizAspect)
+				{
+					frameparams.height = (int)(nRectWidth * fVertAspect/fHorizAspect);
+					frameparams.width = nRectWidth;
+					frameparams.y_origin = (int)((nRectHeight - frameparams.height) / 2.0f); 
+				}
+				// we have a wide, fat window, so pin to the height and 
+				// adjust the width to force the aspect ratio. 
+				else
+				{
+					frameparams.width = (int)(nRectHeight * fHorizAspect/fVertAspect);
+					frameparams.height = nRectHeight;
+					frameparams.x_origin = (int)((nRectWidth - frameparams.width) / 2.0f);
+				}
+			}
 		}
-		/* The last 48 columns of the screen are not used */
-		scr_ptr+=48;
+		
+		// Specify the viewport rectangle that will be sent to the renderer.  This is a
+		// rectangle that encloses the portion of the screen buffer that we want to display.
+		frameparams.view.left = STD_INDENT + cropamount + crop.horizontal;
+		frameparams.view.top = crop.vertical;
+		frameparams.view.right = Screen_WIDTH - frameparams.view.left;
+		frameparams.view.bottom = Screen_HEIGHT - frameparams.view.top;
+		
+    	// If an offset has been set by the user, adjust the viewport by that amount.
+		// The negative signs reverse the shift direction to make it more natural.
+		OffsetRect(&frameparams.view, -offset.horizontal, -offset.vertical);
+		
+		/* When doing a refreshframeparams refresh, perform these direct3d specific  */
+		/* operations.  This should be done regardless of aspect ratio settings.     */
+		if (rendermode == DIRECT3D)
+		{	
+			// Update window dimensions 
+			frameparams.d3dWidth = (float)frameparams.width / nRectWidth;
+			frameparams.d3dHeight = (float)frameparams.height / nRectHeight;
+		
+			// Although Direct3D can handle window resizing with no intervention, it is not 
+			// optimal since it does not automatically change the backbuffer size to match the new
+			// window size.  This can result in lower quality after a resize.  However, if we take
+			// the time to manually reset the device and change the backbuffer size, we can maintain
+			// a high quality image.
+			resetdevice(nRectWidth, nRectHeight, screenmode, &frameparams);
+		}
+
+		// Update the title bar with resolution, scale, scanline information
+		if (screenmode == WINDOW)
+		{
+			char buffer[100];
+			char scanlinetxt[25];
+			
+            // The displayed window scale is actually pixel based rather than screen size
+			// based to make it more useful.  To compute this we use the vertical screen
+			// dimension, since its relatively constant, and factor out any vertical trim.
+			
+			currentscale = (int)Util_round(((float)frameparams.height + 
+			                                (crop.vertical * 2 * ((float)windowscale/100)))
+			                               / 240.0f * 100);
+			
+			switch (frameparams.scanlinemode)
+			{
+				case NONE:
+					strcpy(scanlinetxt, "");
+					break;
+				case LOW:
+					strcpy(scanlinetxt, "; Scanlines: Low (1x)");
+					break;
+				case MEDIUM:
+					strcpy(scanlinetxt, "; Scanlines: Medium (2x)");
+					break;
+				case HIGH:
+					strcpy(scanlinetxt, "; Scanlines: High (3x)");
+					break;
+			}
+			
+			sprintf(buffer, "%s - %dx%d (%d%%)%s",myname, frameparams.width, frameparams.height, currentscale, scanlinetxt);
+			SetWindowText(hWndMain, buffer);
+		}
+
+		refreshframeparams = FALSE;  // we're done refreshing so set the fp_refresh global to FALSE
 	}
 
-	SelectObject(hCdc, hBitmap);
+	// sanity check to make sure the window has some real estate
+	if ((!frameparams.width) || (!frameparams.height))
+		return;
 
-	/* Draw the bitmap on the screen. The image must be flipped vertically */
-	if (!StretchBlt(hdc, 0, 0, ulWindowWidth, ulWindowHeight,
-			hCdc, 0, bi.bmiHeader.biHeight, bi.bmiHeader.biWidth, -bi.bmiHeader.biHeight, SRCCOPY)) {
-		MessageBox(hWndMain, "Could not StretchBlt", myname, MB_OK);
-		DestroyWindow(hWndMain);
+	// Now that we've completed our generic screen processing, pass the screen buffer along
+	// with the calculated frame parameters over to the specific renderer the user has specified
+	// in order to actually render the frame.
+	switch (rendermode)
+	{
+		case GDI:
+			refreshv_gdi(scr_ptr, &frameparams);
+			break;
+		case GDIPLUS:
+			refreshv_gdiplus(scr_ptr, &frameparams);
+			break;
+		case DIRECT3D:
+			refreshv_direct3d(scr_ptr, &frameparams);
+			break;
 	}
 
-	DeleteDC(hCdc);
-	DeleteObject(hBitmap);
-
+	// We are finished writing to the DC
 	EndPaint(hWndMain, &ps);
 
 	ValidateRect(hWndMain, &rt);
 }
 
-void refreshv(UBYTE *scr_ptr)
-{
-	DDSURFACEDESC2 desc0;
-	int err;
-	int x, y;
-	UBYTE *srcb;
-	ULONG *srcl;
-	ULONG *dst;
-	int h, w;
-	DDBLTFX ddbltfx;
-
-	if (windowed) {
-		refreshv_win32api(scr_ptr);
-		return;
-	}
-
-	desc0.dwSize = sizeof(desc0);
-	err = IDirectDrawSurface4_Lock(bltgfx ? lpDDSsrc : lpDDSBack,
-			NULL, &desc0, DDLOCK_WRITEONLY | DDLOCK_WAIT ,NULL);
-	if (err == DD_OK) {
-		linesize = desc0.lPitch;
-		scrwidth = desc0.dwWidth;
-		scrheight = desc0.dwHeight;
-		scraddr = (UBYTE *) desc0.lpSurface + (bltgfx ? linesize * 6 : 0);
-
-		if (bltgfx) {
-			for (y = 0; y < Screen_HEIGHT; y++) {
-				dst = (ULONG *) (scraddr + y * linesize);
-				srcb = scr_ptr + y * Screen_WIDTH;
-				for (x = 0; x < scrwidth; x++)
-					*dst++ = Colours_table[*srcb++];
-			}
-		}
-		else {
-			w = (scrwidth - 336) / 2;
-			h = (scrheight - Screen_HEIGHT) / 2;
-			if (w > 0)
-				scraddr += w;
-			else if (w < 0)
-				scr_ptr -= w;
-			if (h > 0)
-				scraddr += linesize * h;
-			for (y = 0; y < Screen_HEIGHT; y++) {
-				dst = (ULONG *) (scraddr + y * linesize);
-				srcl = (ULONG *) (scr_ptr + y * Screen_WIDTH);
-				for (x = (w >= 0) ? (336 >> 2) : (scrwidth >> 2); x > 0; x--)
-					*dst++ = *srcl++;
-			}
-		}
-
-		IDirectDrawSurface4_Unlock(bltgfx ? lpDDSsrc : lpDDSBack, NULL);
-		linesize = 0;
-		scrwidth = 0;
-		scrheight = 0;
-		scraddr = 0;
-	}
-	else if (err == DDERR_SURFACELOST)
-		err = IDirectDrawSurface4_Restore(bltgfx ? lpDDSsrc : lpDDSBack);
-	else {
-		char txt[256];
-		sprintf(txt, "DirectDraw error 0x%x", err);
-		MessageBox(hWndMain, txt, myname, MB_OK);
-		/* printf("error: %x\n", err); */
-		exit(1);
-	}
-
-	if (bltgfx) {
-		memset(&ddbltfx, 0, sizeof(ddbltfx));
-		ddbltfx.dwSize = sizeof(ddbltfx);
-		err = IDirectDrawSurface4_Blt(lpDDSBack, NULL, lpDDSsrc,
-				NULL, DDBLT_WAIT, &ddbltfx);
-		if (err == DDERR_SURFACELOST)
-			err = IDirectDrawSurface4_Restore(lpDDSBack);
-	}
-
-#if (SHOWFRAME > 0)
-	palette(0, 0x20, 0x20, 0);
-	palupd(CLR_BACK, 1);
-#endif
-	err = IDirectDrawSurface4_Flip(lpDDSPrimary, NULL, DDFLIP_WAIT);
-	/* err = IDirectDrawSurface3_Flip(lpDDSPrimary, NULL, 0); */
-	if (err == DDERR_SURFACELOST)
-		err = IDirectDrawSurface4_Restore(lpDDSPrimary);
-#if (SHOWFRAME > 0)
-	palette(0, 0x0, 0x20, 0x20);
-	palupd(CLR_BACK, 1);
-#endif
-#if (SHOWFRAME > 0)
-	palette(0, 0x0, 0x0, 0x0);
-	palupd(CLR_BACK, 1);
-#endif
-}

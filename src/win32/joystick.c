@@ -2,7 +2,7 @@
  * joystick.c - Win32 port specific code
  *
  * Copyright (C) 2005 James Wilkinson
- * Copyright (C) 2005 Atari800 development team (see DOC/CREDITS)
+ * Copyright (C) 2005-2010 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -22,8 +22,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include "config.h"
 #define DIRECTINPUT_VERSION	    0x0500
+
+#include "config.h"
 #include <windows.h>
 #include <dinput.h>
 
@@ -55,6 +56,7 @@ int procjoy(int num)
 {
   DIJOYSTATE js;
   HRESULT hRes;
+  int i;
 
   if (!dijoy[num])
     return 1;
@@ -68,7 +70,15 @@ int procjoy(int num)
     return 1;
   }
 
+  /* process trigger */
   joystat.trig = (js.rgbButtons[ 0 ] & 0x80) ? 1 : 0;
+  
+  /* process programmable buttons */
+  for (i = 0; i < MAX_PROG_BUTTONS; i++) { 
+	 joystat.jsbutton[num][i][STATE] = (js.rgbButtons[ i + 1 ] & 0x80) ? 1 : 0;
+  }
+  
+  /* process primary joystick. X and Y joystick axis*/
   if (js.lX == 0)
   {
     if (js.lY == 0) joystat.stick = INPUT_STICK_CENTRE;
@@ -87,7 +97,33 @@ int procjoy(int num)
     else if (js.lY < 0) joystat.stick = INPUT_STICK_UR;
     else joystat.stick = INPUT_STICK_LR;
   }
-
+  
+  /* process second joystick on the same gamepad (for dual stick
+     games like Robotron). Second stick must use Z-axis (throttle)
+	 and Z-axis rotation (rudder) for it's X and Y motions.  */
+  if (alternateJoystickMode == JOY_DUAL_MODE) 
+  { 
+	  if (js.lZ == 0)
+	  {
+		if (js.lRz == 0) joystat.stick_1 = INPUT_STICK_CENTRE;
+		else if (js.lRz < 0) joystat.stick_1 = INPUT_STICK_FORWARD;
+		else joystat.stick_1 = INPUT_STICK_BACK;
+	  }
+	  else if (js.lZ < 0)
+	  {
+		if (js.lRz == 0) joystat.stick_1 = INPUT_STICK_LEFT;
+		else if (js.lRz < 0) joystat.stick_1 = INPUT_STICK_UL;
+		else joystat.stick_1 = INPUT_STICK_LL;
+	  }
+	  else
+	  {
+		if (js.lRz == 0) joystat.stick_1 = INPUT_STICK_RIGHT;
+		else if (js.lRz < 0) joystat.stick_1 = INPUT_STICK_UR;
+		else joystat.stick_1 = INPUT_STICK_LR;
+	  }
+  }
+  /* end dual stick processing */
+  
   return 0;
 }
 
@@ -105,6 +141,7 @@ static BOOL CALLBACK joycallback(LPCDIDEVICEINSTANCE pdevinst, LPVOID pv)
     {
       return DIENUM_STOP;
     }
+
   if (IDirectInputDevice_SetDataFormat(pdev, &c_dfDIJoystick) != DI_OK)
     {
       IDirectInputDevice_Release(pdev);
@@ -137,18 +174,31 @@ static BOOL CALLBACK joycallback(LPCDIDEVICEINSTANCE pdevinst, LPVOID pv)
     IDirectInputDevice_Release(pdev);
     return DIENUM_STOP;
   }
+  
   if (SetDIDwordProperty(pdev, DIPROP_DEADZONE, DIJOFS_X, DIPH_BYOFFSET, 5000) != DI_OK)
   {
-    IDirectInputDevice_Release(pdev);
-    return DIENUM_STOP;
+	IDirectInputDevice_Release(pdev);
+	return DIENUM_STOP;
   }
   if (SetDIDwordProperty(pdev, DIPROP_DEADZONE, DIJOFS_Y, DIPH_BYOFFSET, 5000) != DI_OK)
   {
-    IDirectInputDevice_Release(pdev);
-    return DIENUM_STOP;
+	IDirectInputDevice_Release(pdev);
+	return DIENUM_STOP;
   }
+  
+  /* Initialize the Z and Z-Rotation axis for dual stick mode */  
+  /* No reason to stop if these fail, even if GetCapabilities says they should not */
 
-  hRes = pdev->lpVtbl->QueryInterface(pdev, &IID_IDirectInputDevice2,
+  dipr.diph.dwObj = DIJOFS_Z;
+  IDirectInputDevice_SetProperty(pdev, DIPROP_RANGE, &dipr.diph);
+  dipr.diph.dwObj = DIJOFS_RZ;
+  IDirectInputDevice_SetProperty(pdev, DIPROP_RANGE, &dipr.diph);
+  SetDIDwordProperty(pdev, DIPROP_DEADZONE, DIJOFS_Z, DIPH_BYOFFSET, 5000);
+  SetDIDwordProperty(pdev, DIPROP_DEADZONE, DIJOFS_RZ, DIPH_BYOFFSET, 5000);
+
+  /* End Z and Z-Rotation axis initialization */
+  
+  hRes = IDirectInputDevice_QueryInterface(pdev, &IID_IDirectInputDevice2,
 				      (LPVOID*) &dijoy[i]);
   IDirectInputDevice_Release(pdev);
   if (hRes < 0)
@@ -174,6 +224,7 @@ int initjoystick(void)
   {
     return 1;
   }
+  
   return 0;
 }
 
