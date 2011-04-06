@@ -116,7 +116,7 @@ binary-arch:		checkroot build
 
 # Create dependency information
 #
-	dpkg-shlibdeps ./$(P)
+	dpkg-shlibdeps src/$(P)
 
 # Generate control file for the package
 #
