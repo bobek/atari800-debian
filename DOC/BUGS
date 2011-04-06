@@ -81,9 +81,9 @@ Bugs and Known Problems
   - Mirax Force (game) (speech)
   - Saturday Demo (demo) (music)
   - The Last Guardian (game) (speech)
+  - Digital Trash (demo) (music)
 
 * VOL_ONLY_SOUND causes sound bugs in following programs:
-  - Digital Trash (demo)
   - Ghostbusters (game)
   - Overmind (demo)
 
@@ -93,6 +93,22 @@ Bugs and Known Problems
   - Sheol (demo)
   - Total Daze (demo)
   - Ultra (demo)
+
+* The following VAPI images are known to not work:
+  (This list may not be complete, as full VAPI documentation
+   has never been released by the author)
+  - Alternate Reality: The City
+  - Ankh
+  - Attack at EP CYG 4
+  - Ballblazer Activision (UK)
+  - Jenny of the Prairie
+  - Mercenary - Escape from Targ _ Novagen Software
+  - Mr. Do!
+  - Music Studio (The)
+  - Promoteur
+  - Rescue on Fractalus! _ Activision (UK)
+  - Spy vs Spy
+  - Targets - A Number Game
 
 * SDL port uses call back system for filling sound buffer.
   This causes wrong sound effects (noise) in some games.

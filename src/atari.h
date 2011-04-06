@@ -3,13 +3,13 @@
 
 #include "config.h"
 #include <stdio.h> /* FILENAME_MAX */
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 #include <windows.h>
 #endif
 
 /* Fundamental declarations ---------------------------------------------- */
 
-#define Atari800_TITLE  "Atari 800 Emulator, Version 2.1.0"
+#define Atari800_TITLE  "Atari 800 Emulator, Version 2.2.0"
 
 #ifndef FALSE
 #define FALSE  0
@@ -26,7 +26,7 @@
 #define SLONG signed int
 #define UBYTE unsigned char
 #define UWORD unsigned short
-#ifndef WIN32
+#ifndef HAVE_WINDOWS_H
 /* Windows headers typedef ULONG */
 #define ULONG unsigned int
 #endif
@@ -50,8 +50,13 @@ extern int Atari800_machine_type;
 #define Atari800_TV_UNSET 0
 #define Atari800_TV_PAL 312
 #define Atari800_TV_NTSC 262
+#define Atari800_FPS_PAL 49.8607597
+/*49.8607597 = (4.43361875*(4/5)*1000000)/(312*228)*/
+#define Atari800_FPS_NTSC 59.9227434
+/*59.9227434 = (3.579545*1000000)/(262*228)*/
 
-/* Video system / Number of scanlines per frame. */
+/* Video system / Number of scanlines per frame. Do not set this variable
+   directly; instead use Atari800_SetTVMode(). */
 extern int Atari800_tv_mode;
 
 /* TRUE to disable Atari BASIC when booting Atari (hold Option in XL/XE). */
@@ -67,9 +72,15 @@ extern int Atari800_nframes;
 /* How often the screen is updated (1 = every Atari frame). */
 extern int Atari800_refresh_rate;
 
+/* If TRUE, will try to maintain the emulation speed to 100% */
+extern int Atari800_auto_frameskip;
+
 /* Set to TRUE for faster emulation with Atari800_refresh_rate > 1.
    Set to FALSE for accurate emulation with Atari800_refresh_rate > 1. */
 extern int Atari800_collisions_in_skipped_frames;
+
+/* Set to TRUE to run emulated Atari as fast as possible */
+extern int Atari800_turbo;
 
 /* Initializes Atari800 emulation core. */
 int Atari800_Initialise(int *argc, char *argv[]);
@@ -131,5 +142,8 @@ void Atari800_StateSave(void);
 
 /* Read State */
 void Atari800_StateRead(void);
+
+/* Change TV mode. */
+void Atari800_SetTVMode(int mode);
 
 #endif /* ATARI_H_ */

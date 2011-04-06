@@ -34,6 +34,7 @@ void UI_Run(void);
 
 extern int UI_is_active;
 extern int UI_alt_function;
+extern int UI_current_function;
 
 #ifdef CRASH_MENU
 extern int UI_crash_code;
@@ -52,6 +53,12 @@ extern int UI_n_saved_files_dir;
 void PLATFORM_SetJoystickKey(int joystick, int direction, int value);
 void PLATFORM_GetJoystickKeyName(int joystick, int direction, char *buffer, int bufsize);
 int GetRawKey(void);
+#endif
+
+#ifdef DIRECTX
+void PLATFORM_GetButtonAssignments(int stick, int button, char *buffer, int bufsize);
+void PLATFORM_SetButtonAssignment(int stick, int button, int value);
+int GetKeyName(void);
 #endif
 
 /* Menu codes for Alt+letter shortcuts.
@@ -75,6 +82,14 @@ int GetRawKey(void);
 #define UI_MENU_ABOUT            16
 #define UI_MENU_EXIT             17
 #define UI_MENU_CASSETTE         18
+#define UI_MENU_CONTROLLER       19
+#define UI_MENU_WINDOWS	         20
+
+#ifdef DIRECTX
+	#define UI_MENU_SAVE_CONFIG      21
+	#define UI_MENU_FUNCT_KEY_HELP   22
+	#define UI_MENU_HOT_KEY_HELP     23
+#endif
 
 /* Structure of menu item. Each menu is just an array of items of this structure
    terminated by UI_MENU_END */
@@ -143,6 +158,19 @@ typedef int (*UI_fnSelect)(const char *title, int flags, int default_item, const
 /* SelectInt returns an integer chosen by the user from the range min_value..max_value.
    default_value is the initial selection and the value returned if the selection is cancelled. */
 typedef int (*UI_fnSelectInt)(int default_value, int min_value, int max_value);
+/* SelectSlider selects integer chosen by user from the range 0..max_value.
+   start_value is the slider's initial value. The label displayed at the slider is created
+   by calling label_fun. This function takes three parameters:
+   - *label - a buffer into which the label shuld be written to (not longer than 10 chars,
+     excluding the trailing \0);
+   - value - the slider's current value, on which the label should be based;
+   - *user_data - a pointer to any data provided by user in SelectSlider's
+     *user_data parameter.
+   Returns -1 when the user has cancelled.
+   The return value should be converted by user to a usable range. */
+typedef int (*UI_fnSelectSlider)(char const *title, int start_value, int max_value,
+				 void (*label_fun)(char *label, int value, void *user_data),
+				 void *user_data);
 /* EditString provides string input. pString is shown initially and can be modified by the user.
    It won't exceed nSize characters, including NUL. Note that pString may be modified even
    when the user pressed Esc. */
@@ -179,6 +207,7 @@ typedef struct
 {
 	UI_fnSelect           fSelect;
 	UI_fnSelectInt        fSelectInt;
+	UI_fnSelectSlider     fSelectSlider;
 	UI_fnEditString       fEditString;
 	UI_fnGetSaveFilename  fGetSaveFilename;
 	UI_fnGetLoadFilename  fGetLoadFilename;

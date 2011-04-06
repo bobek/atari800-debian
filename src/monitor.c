@@ -2,7 +2,7 @@
  * monitor.c - Implements a builtin system monitor for debugging
  *
  * Copyright (C) 1995-1998 David Firth
- * Copyright (C) 1998-2005 Atari800 development team (see DOC/CREDITS)
+ * Copyright (C) 1998-2010 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -78,6 +78,9 @@ void monitor_printf(const char *format, ...)
 #define PLUS_EXIT_MONITOR
 
 #endif /* __PLUS */
+
+unsigned char *trainer_memory = NULL;
+unsigned char *trainer_flags = NULL;
 
 #ifdef MONITOR_TRACE
 FILE *MONITOR_trace_file = NULL;
@@ -781,6 +784,15 @@ static UWORD show_instruction(FILE *fp, UWORD pc)
 	return pc;
 }
 
+void MONITOR_Exit(void)
+{
+	if (trainer_memory != NULL) {
+		free(trainer_memory);
+		trainer_memory=NULL;
+		trainer_flags=NULL;
+	}
+}
+
 void MONITOR_ShowState(FILE *fp, UWORD pc, UBYTE a, UBYTE x, UBYTE y, UBYTE s,
                 char n, char v, char z, char c)
 {
@@ -1343,7 +1355,9 @@ int MONITOR_Run(void)
 		}
 #ifdef HAVE_SYSTEM
 		if (s[0] == '!') {
-			system(s + 1);
+			if (system(s + 1) == -1) {
+				printf("Error executing '%s'\n", s+1);
+			}
 			continue;
 		}
 #endif
@@ -1375,19 +1389,36 @@ int MONITOR_Run(void)
 				printf("Invalid argument. Usage: BBRK ON or OFF\n");
 		}
 		else if (strcmp(t, "BPC") == 0) {
-			get_hex(&MONITOR_break_addr);
-			if (MONITOR_break_addr >= 0xd000 && MONITOR_break_addr <= 0xd7ff)
-				printf("PC breakpoint disabled\n");
+			int addr_valid = get_hex(&MONITOR_break_addr);
+			if (addr_valid)
+			{
+				if (MONITOR_break_addr >= 0xd000 && MONITOR_break_addr <= 0xd7ff)
+					printf("PC breakpoint disabled\n");
+				else
+					printf("Breakpoint set at PC=%04X\n", MONITOR_break_addr);
+			}
 			else
-				printf("Breakpoint at PC=%04X\n", MONITOR_break_addr);
+			{
+				printf("Breakpoint is at PC=%04X\n", MONITOR_break_addr);
+			}
 		}
 		else if (strcmp(t, "HISTORY") == 0 || strcmp(t, "H") == 0) {
 			int i;
 			for (i = 0; i < CPU_REMEMBER_PC_STEPS; i++) {
 				int j;
+				int k;
+				UWORD saved_cpu = CPU_remember_PC[(CPU_remember_PC_curpos + i) % CPU_REMEMBER_PC_STEPS];
+				UBYTE save_op[3];
 				j = CPU_remember_xpos[(CPU_remember_PC_curpos + i) % CPU_REMEMBER_PC_STEPS];
 				printf("%3d %3d ", j >> 8, j & 0xff);
+				for (k = 0; k < 3; k++) {
+					save_op[k] = MEMORY_dGetByte(saved_cpu + k);
+					MEMORY_dPutByte(saved_cpu + k, CPU_remember_op[(CPU_remember_PC_curpos + i) % CPU_REMEMBER_PC_STEPS][k]);
+				}
 				show_instruction(stdout, CPU_remember_PC[(CPU_remember_PC_curpos + i) % CPU_REMEMBER_PC_STEPS]);
+				for (k = 0; k < 3; k++) {
+					MEMORY_dPutByte(saved_cpu + k, save_op[k]);
+				}
 			}
 		}
 		else if (strcmp(t, "JUMPS") == 0) {
@@ -1751,6 +1782,109 @@ int MONITOR_Run(void)
 				putchar('\n');
 			} while (--count > 0);
 		}
+		else if (strcmp(t, "TSS") == 0) {
+			UWORD trainer_value = 0;
+			int value_valid = get_hex(&trainer_value);
+
+			/* alloc needed memory at first use */
+			if (trainer_memory == NULL) {
+				trainer_memory = malloc(65536*2);
+				if (trainer_memory != NULL) {
+					trainer_flags = trainer_memory + 65536;
+				} else {
+					printf("Memory allocation failed!\n"
+					"Trainer not available.\n");
+				}
+			}
+			if (trainer_memory != NULL) {
+				/* copy memory into shadow buffer at first use */
+				long int count = 65535;
+				do {
+					*(trainer_memory+count) = MEMORY_GetByte((UWORD) count);
+					*(trainer_flags+count) = 0xff;
+				} while (--count > -1);
+				if (value_valid) {
+					count = 65535;
+					do {
+						if (trainer_value != *(trainer_memory+count)) {
+							*(trainer_flags+count) = 0;
+						}
+					} while (--count > -1);
+				}
+			}
+		}
+		else if (strcmp(t, "TSN") == 0) {
+			UWORD trainer_value = 0;
+			int value_valid = get_hex(&trainer_value);
+
+			if (trainer_memory != NULL) {
+				long int count = 65535;
+				do {
+					if (value_valid) {
+						if (trainer_value != MEMORY_GetByte((UWORD) count)) {
+							*(trainer_flags+count) = 0;
+						}
+					} else {
+						if (*(trainer_memory+count) != MEMORY_GetByte((UWORD) count)) {
+							*(trainer_flags+count) = 0;
+						}
+					}
+					*(trainer_memory+count) = MEMORY_GetByte((UWORD) count);
+				} while (--count > -1);
+			} else {
+				printf("Use tss first.\n");
+			}
+		}
+		else if (strcmp(t, "TSC") == 0) {
+			UWORD trainer_value = 0;
+			int value_valid = get_hex(&trainer_value);
+
+			if (trainer_memory != NULL) {
+				long int count = 65535;
+				do {
+					if (value_valid) {
+						if (trainer_value != MEMORY_GetByte((UWORD) count)) {
+							*(trainer_flags+count) = 0;
+						}
+					} else {
+						if (*(trainer_memory+count) == MEMORY_GetByte((UWORD) count)) {
+							*(trainer_flags+count) = 0;
+						}
+					};
+					*(trainer_memory+count) = MEMORY_GetByte((UWORD) count);
+				} while (--count > -1);
+			} else {
+				printf("Use tss first.\n");
+			}
+		}
+		else if (strcmp(t, "TSP") == 0) {
+			UWORD addr_count_max = 0;
+			int addr_valid = get_hex(&addr_count_max);
+
+			/* default print size is 8*8 adresses */
+			if (!addr_valid) {
+				addr_count_max = 64;
+			}
+
+			if (trainer_memory != NULL) {
+				long int count = 0;
+				ULONG addr_count = 0;
+				int i = 0;
+				do {
+					if (*(trainer_flags+count) != 0) {
+						printf("%04X ", (UWORD) count);
+						addr_count++;
+						if (++i == 8) {
+							printf("\n");
+							i = 0;
+						};
+					};
+				} while ((++count < 65536) && (addr_count < addr_count_max));
+			printf("\n");
+			} else {
+				printf("Use tss first.\n");
+			}
+		}
 #ifndef PAGED_MEM
 		else if (strcmp(t, "F") == 0) {
 			UWORD addr1;
@@ -2068,6 +2202,12 @@ int MONITOR_Run(void)
 #ifdef MONITOR_HINTS
 				"LABELS [command] [filename]    - Configure labels\n"
 #endif
+				"TSS [value]                    - Start trainer search\n"
+				"TSC [value]                    - Perform when trainer value has changed\n"
+				"TSN [value]                    - Perform when trainer value has NOT changed\n"
+				"                                 Without [value], perform a deep trainer search\n"
+				"TSP [count]                    - Print [count] possible trainer addresses\n");
+			printf(
 				"COLDSTART, WARMSTART           - Perform system coldstart/warmstart\n"
 #ifdef HAVE_SYSTEM
 				"!command                       - Execute shell command\n"
@@ -2083,3 +2223,7 @@ int MONITOR_Run(void)
 			printf("Invalid command!\n");
 	}
 }
+
+/*
+vim:ts=4:sw=4:
+*/

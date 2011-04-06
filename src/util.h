@@ -4,8 +4,9 @@
 #include "config.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <ctype.h>
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 #include <windows.h>
 #endif
 #ifdef HAVE_UNISTD_H
@@ -22,7 +23,7 @@ int Util_chrieq(char c1, char c2);
 /* Returns a positive integer if str1>str2, negative if str1<str2
  * 0 if str1 == str2, case insensitive */
 int Util_stricmp(const char *str1, const char *str2);
-#elif defined(WIN32)
+#elif defined(HAVE_WINDOWS_H)
 #define Util_stricmp _stricmp
 #elif defined(HAVE_STRCASECMP)
 #define Util_stricmp strcasecmp
@@ -69,8 +70,28 @@ int Util_sscanhex(const char *s);
 /* Likewise, but allows only 0 and 1. */
 int Util_sscanbool(const char *s);
 
+/* Converts the string S to a signed integer *DEST and returns a success flag.
+   The string must be a decimal number optionally preceded by a + or - sign. */
+int Util_sscansdec(char const *s, int *dest);
+
+/* Converts the string S to a (signed) floating point number *DEST and returns
+   a success flag. The string must be a floating-point number. */
+int Util_sscandouble(char const *s, double *dest);
+
 /* safe_strncpy guarantees that the dest. buffer ends with '\0' */
 char *safe_strncpy(char *, const char *, int);
+
+/* Math functions -------------------------------------------------------- */
+
+/* Rounds the floating-point number to the nearest integer. */
+#if HAVE_ROUND
+#define Util_round round
+#else
+double Util_round(double x);
+#endif
+
+/* Function for comparing double floating-point numbers. */
+#define Util_almostequal(x, y, epsilon) (fabs((x)-(y)) <= (epsilon))
 
 /* Memory management ----------------------------------------------------- */
 
@@ -129,7 +150,7 @@ int Util_direxists(const char *filename);
 int Util_flen(FILE *fp);
 
 /* Deletes a file, returns 0 on success, -1 on failure. */
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 int Util_unlink(const char *filename);
 #define HAVE_UTIL_UNLINK
 #elif defined(HAVE_UNLINK)

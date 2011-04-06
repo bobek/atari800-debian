@@ -33,10 +33,11 @@
 #endif /* __STRICT_ANSI__ */
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 #include <windows.h>
 #endif
 
@@ -56,30 +57,16 @@ int Util_chrieq(char c1, char c2)
 }
 
 #ifdef __STRICT_ANSI__
-/*
-**  STRICMP.C - Comapres strings, case-insensitive.
-**
-**  public domain by Bob Stout
-**
-*/
-
-/* from http://c.snippets.org/code/stricmp.c */
 int Util_stricmp(const char *str1, const char *str2)
 {
-      int retval = 0;
+	int retval;
 
-      while (1)
-      {
-            retval = tolower(*str1++) - tolower(*str2++);
-
-            if (retval)
-                  break;
-
-            if (*str1 && *str2)
-                  continue;
-            else  break;
-      }
-      return retval;
+	while((retval = tolower(*str1) - tolower(*str2++)) == 0)
+	{
+		if (*str1++ == '\0')
+			break;
+	}
+	return retval;
 }
 #endif
 
@@ -196,6 +183,37 @@ int Util_sscandec(const char *s)
 	}
 }
 
+int Util_sscansdec(char const *s, int *dest)
+{
+	int minus = FALSE;
+	switch(*s) {
+	case '-':
+		minus = TRUE;
+		/* Fallthrough! */
+	case '+':
+		++s;
+	}
+	*dest = Util_sscandec(s);
+	if (*dest == -1)
+		return FALSE;
+	if (minus)
+		*dest = -*dest;
+	return TRUE;
+}
+
+int Util_sscandouble(char const *s, double *dest)
+{
+	char *endptr;
+	double result;
+
+	result = strtod(s, &endptr);
+	if (endptr[0] != '\0' || errno == ERANGE)
+		return FALSE;
+	*dest = result;
+	return TRUE;
+	
+}
+
 int Util_sscanhex(const char *s)
 {
 	int result;
@@ -225,6 +243,13 @@ int Util_sscanbool(const char *s)
 		return 1;
 	return -1;
 }
+
+#if !HAVE_ROUND
+double Util_round(double x)
+{
+	return floor(x + 0.5);
+}
+#endif
 
 void *Util_malloc(size_t size)
 {
@@ -312,7 +337,7 @@ int Util_fileexists(const char *filename)
 	return TRUE;
 }
 
-#ifdef WIN32
+#ifdef HAVE_WINDOWS_H
 
 int Util_direxists(const char *filename)
 {
@@ -392,7 +417,7 @@ FILE *Util_uniqopen(char *filename, const char *mode)
 #endif
 }
 
-#if defined(WIN32) && defined(UNICODE)
+#if defined(HAVE_WINDOWS_H) && defined(UNICODE)
 int Util_unlink(const char *filename)
 {
 	WCHAR wfilename[FILENAME_MAX];
@@ -411,9 +436,9 @@ int Util_unlink(const char *filename)
 		return -1;
 	return (DeleteFile(wfilename) != 0) ? 0 : -1;
 }
-#elif defined(WIN32) && !defined(UNICODE)
+#elif defined(HAVE_WINDOWS_H) && !defined(UNICODE)
 int Util_unlink(const char *filename)
 {
 	return (DeleteFile(filename) != 0) ? 0 : -1;
 }
-#endif /* defined(WIN32) && defined(UNICODE) */
+#endif /* defined(HAVE_WINDOWS_H) && defined(UNICODE) */

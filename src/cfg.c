@@ -2,7 +2,7 @@
  * cfg.c - Emulator Configuration
  *
  * Copyright (c) 1995-1998 David Firth
- * Copyright (c) 1998-2008 Atari800 development team (see DOC/CREDITS)
+ * Copyright (c) 1998-2010 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -30,10 +30,22 @@
 #include "log.h"
 #include "memory.h"
 #include "pbi.h"
+#ifdef AF80
+#include "af80.h"
+#endif
 #include "platform.h"
 #include "pokeysnd.h"
 #include "ui.h"
 #include "util.h"
+#if !defined(BASIC) && !defined(CURSES_BASIC)
+#include "colours.h"
+#endif
+#ifdef NTSC_FILTER
+#include "filter_ntsc.h"
+#endif
+#if SUPPORTS_CHANGE_VIDEOMODE
+#include "videomode.h"
+#endif
 
 char CFG_osa_filename[FILENAME_MAX] = Util_FILENAME_NOT_SET;
 char CFG_osb_filename[FILENAME_MAX] = Util_FILENAME_NOT_SET;
@@ -139,9 +151,9 @@ int CFG_LoadConfig(const char *alternate_config_filename)
 		}
 	}
 
-	fgets(string, sizeof(string), fp);
-
-	Log_print("Using Atari800 config file: %s\nCreated by %s", fname, string);
+	if (fgets(string, sizeof(string), fp) != NULL) {
+		Log_print("Using Atari800 config file: %s\nCreated by %s", fname, string);
+	}
 
 	while (fgets(string, sizeof(string), fp)) {
 		char *ptr;
@@ -224,8 +236,10 @@ int CFG_LoadConfig(const char *alternate_config_filename)
 
 			else if (strcmp(string, "ENABLE_NEW_POKEY") == 0) {
 #ifdef SOUND
+#ifndef SYNCHRONIZED_SOUND
 				POKEYSND_enable_new_pokey = Util_sscanbool(ptr);
-#endif
+#endif /* SYNCHRONIZED_SOUND */
+#endif /* SOUND */
 			}
 			else if (strcmp(string, "STEREO_POKEY") == 0) {
 #ifdef STEREO_SOUND
@@ -289,6 +303,22 @@ int CFG_LoadConfig(const char *alternate_config_filename)
 			/* Add module-specific configurations here */
 			else if (PBI_ReadConfig(string,ptr)) {
 			}
+#ifdef AF80
+			else if (AF80_ReadConfig(string,ptr)) {
+			}
+#endif
+#if !defined(BASIC) && !defined(CURSES_BASIC)
+			else if (Colours_ReadConfig(string, ptr)) {
+			}
+#endif
+#ifdef NTSC_FILTER
+			else if (FILTER_NTSC_ReadConfig(string, ptr)) {
+			}
+#endif
+#if SUPPORTS_CHANGE_VIDEOMODE
+			else if (VIDEOMODE_ReadConfig(string, ptr)) {
+			}
+#endif
 			else {
 #ifdef SUPPORTS_PLATFORM_CONFIGURE
 				if (!PLATFORM_Configure(string, ptr)) {
@@ -382,7 +412,9 @@ int CFG_WriteConfig(void)
 #endif
 
 #ifdef SOUND
+#ifndef SYNCHRONIZED_SOUND
 	fprintf(fp, "ENABLE_NEW_POKEY=%d\n", POKEYSND_enable_new_pokey);
+#endif /* SYNCHRONIZED_SOUND */
 #ifdef STEREO_SOUND
 	fprintf(fp, "STEREO_POKEY=%d\n", POKEYSND_stereo_enabled);
 #endif
@@ -395,11 +427,36 @@ int CFG_WriteConfig(void)
 #endif /* SOUND */
 	/* Add module-specific configurations here */
 	PBI_WriteConfig(fp);
-
+#ifdef AF80
+	AF80_WriteConfig(fp);
+#endif
+#if !defined(BASIC) && !defined(CURSES_BASIC)
+	Colours_WriteConfig(fp);
+#endif
+#ifdef NTSC_FILTER
+	FILTER_NTSC_WriteConfig(fp);
+#endif
+#if SUPPORTS_CHANGE_VIDEOMODE
+	VIDEOMODE_WriteConfig(fp);
+#endif
 #ifdef SUPPORTS_PLATFORM_CONFIGSAVE
 	PLATFORM_ConfigSave(fp);
 #endif
-
 	fclose(fp);
 	return TRUE;
 }
+
+int CFG_MatchTextParameter(char const *param, char const * const cfg_strings[], int cfg_strings_size)
+{
+	int i;
+	for (i = 0; i < cfg_strings_size; i ++) {
+		if (Util_stricmp(param, cfg_strings[i]) == 0)
+			return i;
+	}
+	/* Unrecognised value */
+	return -1;
+}
+
+/*
+vim:ts=4:sw=4:
+*/
