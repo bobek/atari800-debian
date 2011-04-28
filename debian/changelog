@@ -1,3 +1,10 @@
+atari800 (2.2.1-1) unstable; urgency=low
+
+  * new upstream release fixes kFreeBSD and other things
+    Closes: #621100
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Thu, 28 Apr 2011 18:45:09 +0200
+
 atari800 (2.2.0-1) unstable; urgency=low
 
   * New upstream release.
