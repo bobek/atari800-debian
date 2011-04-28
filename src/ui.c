@@ -2,7 +2,7 @@
  * ui.c - main user interface
  *
  * Copyright (C) 1995-1998 David Firth
- * Copyright (C) 1998-2010 Atari800 development team (see DOC/CREDITS)
+ * Copyright (C) 1998-2011 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -83,6 +83,7 @@
 #endif /* SUPPORTS_CHANGE_VIDEOMODE */
 #if SDL
 #include "sdl/video.h"
+#include "sdl/video_sw.h"
 #if HAVE_OPENGL
 #include "sdl/video_gl.h"
 #endif /* HAVE_OPENGL */
@@ -179,7 +180,7 @@ static void SetItemChecked(UI_tMenuItem *mip, int option, int checked)
 static void FilenameMessage(const char *format, const char *filename)
 {
 	char msg[FILENAME_MAX + 30];
-	sprintf(msg, format, filename);
+	snprintf(msg, sizeof(msg), format, filename);
 	UI_driver->fMessage(msg, 1);
 }
 
@@ -822,7 +823,7 @@ static void SoundRecording(void)
 		int no = 0;
 		do {
 			char buffer[32];
-			sprintf(buffer, "atari%03d.wav", no);
+			snprintf(buffer, sizeof(buffer), "atari%03d.wav", no);
 			if (!Util_fileexists(buffer)) {
 				/* file does not exist - we can create it */
 				FilenameMessage(SndSave_OpenSoundFile(buffer)
@@ -1266,27 +1267,55 @@ static int ChooseVideoResolution(int current_res)
 	return current_res;
 }
 
+/* Callback function that writes a text label to *LABEL, for use by
+   any slider that adjusts an integer value. */
+static void IntSliderLabel(char *label, int value, void *user_data)
+{
+	value += *((int *)user_data);
+	sprintf(label, "%i", value); /* WARNING: No more that 10 chars! */
+}
+
+/* Callback function that writes a text label to *LABEL, for use by
+   the Set Horizontal Offset slider. */
+static void HorizOffsetSliderLabel(char *label, int value, void *user_data)
+{
+	value += *((int *)user_data);
+	sprintf(label, "%i", value); /* WARNING: No more that 10 chars! */
+	VIDEOMODE_SetHorizontalOffset(value);
+}
+
+/* Callback function that writes a text label to *LABEL, for use by
+   the Set Vertical Offset slider. */
+static void VertOffsetSliderLabel(char *label, int value, void *user_data)
+{
+	value += *((int *)user_data);
+	sprintf(label, "%i", value); /* WARNING: No more that 10 chars! */
+	VIDEOMODE_SetVerticalOffset(value);
+}
+
+/* Callback function that writes a text label to *LABEL, for use by
+   the Scanlines Visibility slider. */
+static void ScanlinesSliderLabel(char *label, int value, void *user_data)
+{
+	sprintf(label, "%i", value);
+	SDL_VIDEO_SetScanlinesPercentage(value);
+}
+
 static void VideoModeSettings(void)
 {
-#if SDL
-	static const UI_tMenuItem bpp_menu_array[] = {
+	static const UI_tMenuItem host_aspect_menu_array[] = {
 		UI_MENU_ACTION(0, "autodetect"),
-#if HAVE_OPENGL
-		UI_MENU_ACTION(1, "8 (not with hardware acceleration)"),
-#else
-		UI_MENU_ACTION(1, "8"),
-#endif /* HAVE_OPENGL */
-		UI_MENU_ACTION(2, "16"),
-		UI_MENU_ACTION(3, "32"),
+		UI_MENU_ACTION(1, "4:3"),
+		UI_MENU_ACTION(2, "5:4"),
+		UI_MENU_ACTION(3, "16:9"),
+		UI_MENU_ACTION(4, "custom"),
 		UI_MENU_END
 	};
-	static char bpp_string[3];
-#endif /* SDL */
 	static const UI_tMenuItem stretch_menu_array[] = {
 		UI_MENU_ACTION(0, "none (1x)"),
 		UI_MENU_ACTION(1, "2x"),
 		UI_MENU_ACTION(2, "3x"),
-		UI_MENU_ACTION(3, "fit screen - integer"),
+		UI_MENU_ACTION(3, "fit screen - integral"),
 		UI_MENU_ACTION(4, "fit screen - full"),
 		UI_MENU_ACTION(5, "custom"),
 		UI_MENU_END
@@ -1299,8 +1328,8 @@ static void VideoModeSettings(void)
 		UI_MENU_END
 	};
 	static const UI_tMenuItem aspect_menu_array[] = {
-		UI_MENU_ACTION(0, "disabled"),
-		UI_MENU_ACTION(1, "1:1"),
+		UI_MENU_ACTION(0, "don't keep"),
+		UI_MENU_ACTION(1, "square pixels"),
 		UI_MENU_ACTION(2, "authentic"),
 		UI_MENU_END
 	};
@@ -1325,32 +1354,55 @@ static void VideoModeSettings(void)
 	static char horiz_offset_string[4];
 	static char vert_offset_string[4];
 #if SDL
+	static const UI_tMenuItem bpp_menu_array[] = {
+		UI_MENU_ACTION(0, "autodetect"),
+		UI_MENU_ACTION(1, "8"),
+		UI_MENU_ACTION(2, "16"),
+		UI_MENU_ACTION(3, "32"),
+		UI_MENU_END
+	};
+	static char bpp_string[3];
+#if HAVE_OPENGL
+	static const UI_tMenuItem pixel_format_menu_array[] = {
+		UI_MENU_ACTION(0, "16-bit BGR"),
+		UI_MENU_ACTION(1, "16-bit RGB"),
+		UI_MENU_ACTION(2, "32-bit BGRA"),
+		UI_MENU_ACTION(3, "32-bit ARGB"),
+		UI_MENU_END
+	};
+#endif /* HAVE_OPENGL */
 	static char scanlines_string[4];
 #endif /* SDL */
+
 	static UI_tMenuItem menu_array[] = {
-		UI_MENU_SUBMENU_SUFFIX(0, "Fullscreen resolution:", res_string),
-#if SDL
-		UI_MENU_SUBMENU_SUFFIX(1, "Bits per pixel:", bpp_string),
-#endif /* SDL */
-		UI_MENU_CHECK(2, "Fullscreen:"),
+		UI_MENU_SUBMENU_SUFFIX(0, "Host display aspect ratio:", ratio_string),
+#if SDL && HAVE_OPENGL
+		UI_MENU_CHECK(1, "Hardware acceleration:"),
+		UI_MENU_CHECK(2, " Bilinear filtering:"),
+		UI_MENU_CHECK(3, " Use pixel buffer objects:"),
+#endif /* SDL && HAVE_OPENGL */
+		UI_MENU_CHECK(4, "Fullscreen:"),
+		UI_MENU_SUBMENU_SUFFIX(5, " Fullscreen resolution:", res_string),
 #if SUPPORTS_ROTATE_VIDEOMODE
-		UI_MENU_CHECK(3, "Rotate sideways:"),
+		UI_MENU_CHECK(6, "Rotate sideways:"),
 #endif /* SUPPORTS_ROTATE_VIDEOMODE */
-		UI_MENU_SUBMENU_SUFFIX(4, "Stretch:", NULL),
-		UI_MENU_SUBMENU_SUFFIX(5, "Fit screen method:", NULL),
-		UI_MENU_SUBMENU_SUFFIX(6, "Keep aspect ratio:", NULL),
-		UI_MENU_SUBMENU_SUFFIX(7, "Host display aspect ratio:", ratio_string),
-		UI_MENU_SUBMENU_SUFFIX(8, "Horizontal view area:", NULL),
-		UI_MENU_SUBMENU_SUFFIX(9, "Vertical view area:", NULL),
-		UI_MENU_SUBMENU_SUFFIX(10, "Horizontal offset:", horiz_offset_string),
-		UI_MENU_SUBMENU_SUFFIX(11, "Vertical offset:", vert_offset_string),
 #if SDL
-		UI_MENU_SUBMENU_SUFFIX(12, "Scanlines visibility:", scanlines_string),
-		UI_MENU_CHECK(13, "Interpolate scanlines:"),
+		UI_MENU_SUBMENU_SUFFIX(7, "Bits per pixel:", bpp_string),
 #if HAVE_OPENGL
-		UI_MENU_CHECK(14, "Hardware acceleration:"),
-		UI_MENU_CHECK(15, "Bilinear filtering:"),
+		UI_MENU_SUBMENU_SUFFIX(8, "Pixel format:", NULL),
 #endif /* HAVE_OPENGL */
+		UI_MENU_CHECK(9, "Vertical synchronization:"),
+#endif /* SDL */
+		UI_MENU_SUBMENU_SUFFIX(10, "Image aspect ratio:", NULL),
+		UI_MENU_SUBMENU_SUFFIX(11, "Stretch image:", NULL),
+		UI_MENU_SUBMENU_SUFFIX(12, "Fit screen method:", NULL),
+		UI_MENU_SUBMENU_SUFFIX(13, "Horizontal view area:", NULL),
+		UI_MENU_SUBMENU_SUFFIX(14, "Vertical view area:", NULL),
+		UI_MENU_SUBMENU_SUFFIX(15, "Horizontal shift:", horiz_offset_string),
+		UI_MENU_SUBMENU_SUFFIX(16, "Vertical shift:", vert_offset_string),
+#if SDL
+		UI_MENU_SUBMENU_SUFFIX(17, "Scanlines visibility:", scanlines_string),
+		UI_MENU_CHECK(18, " Interpolate scanlines:"),
 #endif /* SDL */
 		UI_MENU_END
 	};
@@ -1359,63 +1411,120 @@ static void VideoModeSettings(void)
 	int seltype;
 
 	for (;;) {
-		VIDEOMODE_CopyResolutionName(VIDEOMODE_GetFullscreenResolution(), res_string, 10);
-#if SDL
-			/* sprintf is safe - bpp can't be higher that 32. */
-			sprintf(bpp_string, "%d", SDL_VIDEO_bpp);
-#endif /* SDL */
-		SetItemChecked(menu_array, 2, !VIDEOMODE_windowed);
-#if SUPPORTS_ROTATE_VIDEOMODE
-		SetItemChecked(menu_array, 3, VIDEOMODE_rotate90);
-#endif
-		if (VIDEOMODE_stretch < VIDEOMODE_STRETCH_CUSTOM)
-			FindMenuItem(menu_array, 4)->suffix = stretch_menu_array[VIDEOMODE_stretch].item;
-		else {
-			FindMenuItem(menu_array, 4)->suffix = stretch_string;
-			snprintf(stretch_string, sizeof(stretch_string) - 1, "%f", VIDEOMODE_custom_stretch);
-		}
-		FindMenuItem(menu_array, 5)->suffix = fit_menu_array[VIDEOMODE_fit].item;
-		FindMenuItem(menu_array, 6)->suffix = aspect_menu_array[VIDEOMODE_keep_aspect].item;
 		VIDEOMODE_CopyHostAspect(ratio_string, 10);
-		if (VIDEOMODE_horizontal_area < VIDEOMODE_HORIZONTAL_CUSTOM)
-			FindMenuItem(menu_array, 8)->suffix = width_menu_array[VIDEOMODE_horizontal_area].item;
+#if SDL
+		snprintf(bpp_string, sizeof(bpp_string), "%d", SDL_VIDEO_SW_bpp);
+#if HAVE_OPENGL
+		SetItemChecked(menu_array, 1, SDL_VIDEO_opengl);
+		SetItemChecked(menu_array, 2, SDL_VIDEO_GL_filtering);
+		SetItemChecked(menu_array, 3, SDL_VIDEO_GL_pbo);
+		if (SDL_VIDEO_opengl) {
+			FindMenuItem(menu_array, 7)->flags = UI_ITEM_HIDDEN;
+			FindMenuItem(menu_array, 8)->flags = UI_ITEM_SUBMENU;
+			FindMenuItem(menu_array, 8)->suffix = pixel_format_menu_array[SDL_VIDEO_GL_pixel_format].item;
+		} else {
+			FindMenuItem(menu_array, 7)->flags = UI_ITEM_SUBMENU;
+			FindMenuItem(menu_array, 8)->flags = UI_ITEM_HIDDEN;
+		}
+#endif /* HAVE_OPENGL */
+		if (SDL_VIDEO_vsync && !SDL_VIDEO_vsync_available) {
+			FindMenuItem(menu_array, 9)->flags = UI_ITEM_ACTION;
+			FindMenuItem(menu_array, 9)->suffix = "N/A";
+		} else {
+			FindMenuItem(menu_array, 9)->flags = UI_ITEM_CHECK;
+			SetItemChecked(menu_array, 9, SDL_VIDEO_vsync);
+		}
+		snprintf(scanlines_string, sizeof(scanlines_string), "%d", SDL_VIDEO_scanlines_percentage);
+		SetItemChecked(menu_array, 18, SDL_VIDEO_interpolate_scanlines);
+#endif /* SDL */
+		SetItemChecked(menu_array, 4, !VIDEOMODE_windowed);
+		VIDEOMODE_CopyResolutionName(VIDEOMODE_GetFullscreenResolution(), res_string, 10);
+#if SUPPORTS_ROTATE_VIDEOMODE
+		SetItemChecked(menu_array, 6, VIDEOMODE_rotate90);
+#endif
+		FindMenuItem(menu_array, 10)->suffix = aspect_menu_array[VIDEOMODE_keep_aspect].item;
+		if (VIDEOMODE_stretch < VIDEOMODE_STRETCH_CUSTOM)
+			FindMenuItem(menu_array, 11)->suffix = stretch_menu_array[VIDEOMODE_stretch].item;
 		else {
-			FindMenuItem(menu_array, 8)->suffix = horiz_area_string;
-			/* sprintf is safe - horizontal area can't be higher than 384. */
-			sprintf(horiz_area_string, "%d", VIDEOMODE_custom_horizontal_area);
+			FindMenuItem(menu_array, 11)->suffix = stretch_string;
+			snprintf(stretch_string, sizeof(stretch_string), "%f", VIDEOMODE_custom_stretch);
+		}
+		FindMenuItem(menu_array, 12)->suffix = fit_menu_array[VIDEOMODE_fit].item;
+		if (VIDEOMODE_horizontal_area < VIDEOMODE_HORIZONTAL_CUSTOM)
+			FindMenuItem(menu_array, 13)->suffix = width_menu_array[VIDEOMODE_horizontal_area].item;
+		else {
+			FindMenuItem(menu_array, 13)->suffix = horiz_area_string;
+			snprintf(horiz_area_string, sizeof(horiz_area_string), "%d", VIDEOMODE_custom_horizontal_area);
 		}
 		if (VIDEOMODE_vertical_area < VIDEOMODE_VERTICAL_CUSTOM)
-			FindMenuItem(menu_array, 9)->suffix = height_menu_array[VIDEOMODE_vertical_area].item;
+			FindMenuItem(menu_array, 14)->suffix = height_menu_array[VIDEOMODE_vertical_area].item;
 		else {
-			FindMenuItem(menu_array, 9)->suffix = vert_area_string;
-			/* sprintf is safe - vertical area can't be higher than 240. */
-			sprintf(vert_area_string, "%d", VIDEOMODE_custom_vertical_area);
+			FindMenuItem(menu_array, 14)->suffix = vert_area_string;
+			snprintf(vert_area_string, sizeof(vert_area_string), "%d", VIDEOMODE_custom_vertical_area);
 		}
-		/* sprintf is safe - both offsets can't be higher than 384 or 240. */
-		sprintf(horiz_offset_string, "%d", VIDEOMODE_horizontal_offset);
-		sprintf(vert_offset_string, "%d", VIDEOMODE_vertical_offset);
-#if SDL
-		/* sprintf is safe - scanlines percentage can't be higher than 100. */
-		sprintf(scanlines_string, "%d", SDL_VIDEO_scanlines_percentage);
-		SetItemChecked(menu_array, 13, SDL_VIDEO_interpolate_scanlines);
-#if HAVE_OPENGL
-		SetItemChecked(menu_array, 14, SDL_VIDEO_opengl);
-		SetItemChecked(menu_array, 15, SDL_VIDEO_GL_filtering);
-#endif /* HAVE_OPENGL */
-#endif /* SDL */
+		snprintf(horiz_offset_string, sizeof(horiz_offset_string), "%d", VIDEOMODE_horizontal_offset);
+		snprintf(vert_offset_string, sizeof(vert_offset_string), "%d", VIDEOMODE_vertical_offset);
 
 		option = UI_driver->fSelect("Video Mode Settings", 0, option, menu_array, &seltype);
 		switch (option) {
 		case 0:
+			{
+				int current;
+				for (current = 1; current < 4; ++current) {
+					/* Find the currently-chosen host aspect ratio. */
+					if (strcmp(ratio_string, host_aspect_menu_array[current].item) == 0)
+						break;
+				}
+				option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, current, host_aspect_menu_array, NULL);
+				if (option2 == 4) {
+					char buffer[sizeof(ratio_string)];
+					memcpy(buffer, ratio_string, sizeof(buffer));
+					if (UI_driver->fEditString("Enter value in x:y format", buffer, sizeof(buffer)))
+						VIDEOMODE_SetHostAspectString(buffer);
+				}
+				else if (option2 >= 1)
+					VIDEOMODE_SetHostAspectString(host_aspect_menu_array[option2].item);
+				else if (option2 == 0)
+					VIDEOMODE_AutodetectHostAspect();
+			}
+			break;
+#if SDL && HAVE_OPENGL
+		case 1:
+			SDL_VIDEO_ToggleOpengl();
+			if (!SDL_VIDEO_opengl_available)
+				UI_driver->fMessage("Error: OpenGL is not available.", 1);
+				
+			break;
+		case 2:
+			if (!SDL_VIDEO_opengl)
+				UI_driver->fMessage("Works only with hardware acceleration.", 1);
+			SDL_VIDEO_GL_ToggleFiltering();
+			break;
+		case 3:
+			if (!SDL_VIDEO_opengl)
+				UI_driver->fMessage("Works only with hardware acceleration.", 1);
+			if (!SDL_VIDEO_GL_TogglePbo())
+				UI_driver->fMessage("Pixel buffer objects not available.", 1);
+			break;
+#endif /* SDL && HAVE_OPENGL */
+		case 4:
+			VIDEOMODE_ToggleWindowed();
+			break;
+		case 5:
 			option2 = ChooseVideoResolution(VIDEOMODE_GetFullscreenResolution());
 			if (option2 >= 0)
 				VIDEOMODE_SetFullscreenResolution(option2);
 			break;
+#if SUPPORTS_ROTATE_VIDEOMODE
+		case 6:
+			VIDEOMODE_ToggleRotate90();
+			break;
+#endif
 #if SDL
-		case 1:
+		case 7:
 			{
 				int current;
-				switch (SDL_VIDEO_bpp) {
+				switch (SDL_VIDEO_SW_bpp) {
 				case 0:
 					current = 0;
 					break;
@@ -1431,29 +1540,37 @@ static void VideoModeSettings(void)
 				option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, current, bpp_menu_array, NULL);
 				switch(option2) {
 				case 0:
-					SDL_VIDEO_SetBpp(0);
+					SDL_VIDEO_SW_SetBpp(0);
 					break;
 				case 1:
-					SDL_VIDEO_SetBpp(8);
+					SDL_VIDEO_SW_SetBpp(8);
 					break;
 				case 2:
-					SDL_VIDEO_SetBpp(16);
+					SDL_VIDEO_SW_SetBpp(16);
 					break;
 				case 3:
-					SDL_VIDEO_SetBpp(32);
+					SDL_VIDEO_SW_SetBpp(32);
 				}
 			}
 			break;
+#if HAVE_OPENGL
+		case 8:
+			option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, SDL_VIDEO_GL_pixel_format, pixel_format_menu_array, NULL);
+			if (option2 >= 0)
+				SDL_VIDEO_GL_SetPixelFormat(option2);
+			break;
+#endif /* HAVE_OPENGL */
+		case 9:
+			if (!SDL_VIDEO_ToggleVsync())
+				UI_driver->fMessage("Not available in this video mode.", 1);
+			break;
 #endif /* SDL */
-		case 2:
-			VIDEOMODE_ToggleWindowed();
+		case 10:
+			option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, VIDEOMODE_keep_aspect, aspect_menu_array, NULL);
+			if (option2 >= 0)
+				VIDEOMODE_SetKeepAspect(option2);
 			break;
-#if SUPPORTS_ROTATE_VIDEOMODE
-		case 3:
-			VIDEOMODE_ToggleRotate90();
-			break;
-#endif
-		case 4:
+		case 11:
 			option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, VIDEOMODE_stretch, stretch_menu_array, NULL);
 			if (option2 >= 0) {
 				if (option2 < VIDEOMODE_STRETCH_CUSTOM)
@@ -1466,66 +1583,52 @@ static void VideoModeSettings(void)
 				}
 			}
 			break;
-		case 5:
+		case 12:
 			option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, VIDEOMODE_fit, fit_menu_array, NULL);
 			if (option2 >= 0)
 				VIDEOMODE_SetFit(option2);
 			break;
-		case 6:
-			option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, VIDEOMODE_keep_aspect, aspect_menu_array, NULL);
-			if (option2 >= 0)
-				VIDEOMODE_SetKeepAspect(option2);
-			break;
-		case 7:
-			{
-				char buffer[sizeof(ratio_string)];
-				memcpy(buffer, ratio_string, sizeof(buffer));
-				if (UI_driver->fEditString("Enter value in x:y format", buffer, sizeof(buffer)))
-					VIDEOMODE_SetHostAspectString(buffer);
-			}
-			break;
-		case 8:
+		case 13:
 			option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, VIDEOMODE_horizontal_area, width_menu_array, NULL);
 			if (option2 >= 0) {
 				if (option2 < VIDEOMODE_HORIZONTAL_CUSTOM)
 					VIDEOMODE_SetHorizontalArea(option2);
 				else {
-					char buffer[sizeof(horiz_area_string)];
-#ifdef HAVE_SNPRINTF
-					snprintf(buffer, sizeof(buffer), "%d", VIDEOMODE_custom_horizontal_area);
-#else
-					sprintf(buffer, "%d", VIDEOMODE_custom_horizontal_area);
-#endif
-					if (UI_driver->fEditString("Enter number of pixels (160..384)", buffer, sizeof(buffer)))
-						VIDEOMODE_SetCustomHorizontalArea(atoi(buffer));
+					int offset = 160;
+					int value = UI_driver->fSelectSlider("Adjust horizontal area",
+					                                     VIDEOMODE_custom_horizontal_area - offset,
+					                                     384 - 160, &IntSliderLabel, &offset);
+					if (value != -1)
+						VIDEOMODE_SetCustomHorizontalArea(value + offset);
 				}
 			}
 			break;
-		case 9:
+		case 14:
 			option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, VIDEOMODE_vertical_area, height_menu_array, NULL);
 			if (option2 >= 0) {
 				if (option2 < VIDEOMODE_VERTICAL_CUSTOM)
 					VIDEOMODE_SetVerticalArea(option2);
 				else {
-					char buffer[sizeof(vert_area_string)];
-#ifdef HAVE_SNPRINTF
-					snprintf(buffer, sizeof(buffer), "%d", VIDEOMODE_custom_vertical_area);
-#else
-					sprintf(buffer, "%d", VIDEOMODE_custom_vertical_area);
-#endif
-					if (UI_driver->fEditString("Enter number of scanlines (120..275)", buffer, sizeof(buffer)))
-						VIDEOMODE_SetCustomVerticalArea(atoi(buffer));
+					int offset = 120;
+					int value = UI_driver->fSelectSlider("Adjust vertical area",
+					                                     VIDEOMODE_custom_vertical_area - offset,
+					                                     275 - 120, &IntSliderLabel, &offset);
+					if (value != -1)
+						VIDEOMODE_SetCustomVerticalArea(value + offset);
 				}
 			}
 			break;
-		case 10:
+		case 15:
 			switch (seltype) {
 			case UI_USER_SELECT:
 				{
-					char buffer[sizeof(horiz_offset_string)];
-					memcpy(buffer, horiz_offset_string, sizeof(buffer));
-					if (UI_driver->fEditString("Enter value", buffer, sizeof(buffer)))
-						VIDEOMODE_SetHorizontalOffset(atoi(buffer));
+					int range = 384 - VIDEOMODE_custom_horizontal_area;
+					int offset = - range / 2;
+					int value = UI_driver->fSelectSlider("Adjust horizontal shift",
+					                                     VIDEOMODE_horizontal_offset - offset,
+					                                     range, &HorizOffsetSliderLabel, &offset);
+					if (value != -1)
+						VIDEOMODE_SetHorizontalOffset(value + offset);
 				}
 				break;
 			case UI_USER_DELETE:
@@ -1533,14 +1636,17 @@ static void VideoModeSettings(void)
 				break;
 			}
 			break;
-		case 11:
+		case 16:
 			switch (seltype) {
 			case UI_USER_SELECT:
 				{
-					char buffer[sizeof(vert_offset_string)];
-					memcpy(buffer, vert_offset_string, sizeof(buffer));
-					if (UI_driver->fEditString("Enter value", buffer, sizeof(buffer)))
-						VIDEOMODE_SetVerticalOffset(atoi(buffer));
+					int range = 275 - VIDEOMODE_custom_vertical_area;
+					int offset = - range / 2;
+					int value = UI_driver->fSelectSlider("Adjust vertical shift",
+					                                     VIDEOMODE_vertical_offset - offset,
+					                                     range, &VertOffsetSliderLabel, &offset);
+					if (value != -1)
+						VIDEOMODE_SetVerticalOffset(value + offset);
 				}
 				break;
 			case UI_USER_DELETE:
@@ -1549,30 +1655,18 @@ static void VideoModeSettings(void)
 			}
 			break;
 #if SDL
-		case 12:
+		case 17:
 			{
-				char buffer[sizeof(scanlines_string)];
-				memcpy(buffer, scanlines_string, sizeof(buffer));
-				if (UI_driver->fEditString("Enter value (0-100)", buffer, sizeof(buffer)))
-					SDL_VIDEO_SetScanlinesPercentage(atoi(buffer));
+				int value = UI_driver->fSelectSlider("Adjust scanlines visibility",
+				                                     SDL_VIDEO_scanlines_percentage,
+				                                     100, &ScanlinesSliderLabel, NULL);
+				if (value != -1)
+					SDL_VIDEO_SetScanlinesPercentage(value);
 			}
 			break;
-		case 13:
+		case 18:
 			SDL_VIDEO_ToggleInterpolateScanlines();
 			break;
-#if HAVE_OPENGL
-		case 14:
-			SDL_VIDEO_ToggleOpengl();
-			if (!SDL_VIDEO_opengl_available)
-				UI_driver->fMessage("Error: OpenGL is not available.", 1);
-				
-			break;
-		case 15:
-			if (!SDL_VIDEO_opengl)
-				UI_driver->fMessage("Works only with hardware acceleration.", 1);
-			SDL_VIDEO_GL_ToggleFiltering();
-			break;
-#endif /* HAVE_OPENGL */
 #endif /* SDL */
 		default:
 			return;
@@ -1610,17 +1704,10 @@ static struct {
 /* Updates the string representation of a single colour control. */
 static void UpdateColourControl(const int idx)
 {
-#ifdef HAVE_SNPRINTF
 	snprintf(colour_controls[idx].string,
-		 sizeof(colour_controls[0].string) - 1,
+		 sizeof(colour_controls[0].string),
 		 "%.2f",
 		 *(colour_controls[idx].setting));
-#else
-	sprintf(colour_controls[idx].string,
-		 "%.2f",
-		 *(colour_controls[idx].setting));
-#endif /* HAVE_SNPRINTF */
-
 }
 
 /* Sets pointers to colour controls properly, and hides/shows the Hue and
@@ -1737,7 +1824,7 @@ static void NTSCFilterSettings(void)
 		case 6:
 			{
 				int index = option + 5;
-				int value = UI_driver->fSelectSlider("Select value",
+				int value = UI_driver->fSelectSlider("Adjust value",
 								     ColourSettingToSlider(index),
 								     100, &ColourSliderLabel, &index);
 				if (value != -1) {
@@ -1906,7 +1993,7 @@ static void DisplaySettings(void)
 #if SUPPORTS_CHANGE_VIDEOMODE && (defined(XEP80_EMULATION) || defined(PBI_PROTO80) || defined(AF80))
 		SetItemChecked(menu_array, 25, VIDEOMODE_80_column);
 #endif
-		sprintf(refresh_status, "1:%-2d", Atari800_refresh_rate);
+		snprintf(refresh_status, sizeof(refresh_status), "1:%-2d", Atari800_refresh_rate);
 		SetItemChecked(menu_array, 2, Atari800_collisions_in_skipped_frames);
 		SetItemChecked(menu_array, 3, Screen_show_atari_speed);
 		SetItemChecked(menu_array, 4, Screen_show_disk_led);
@@ -2052,7 +2139,7 @@ static void DisplaySettings(void)
 		case 18:
 			{
 				int index = option - 13;
-				int value = UI_driver->fSelectSlider("Select value",
+				int value = UI_driver->fSelectSlider("Adjust value",
 								     ColourSettingToSlider(index),
 								     100, &ColourSliderLabel, &index);
 				if (value != -1) {
@@ -2243,14 +2330,14 @@ static void WindowsOptions(void)
 			else if (aspectmode == COMPRESSED)
 				FindMenuItem(menu_array, 5)->suffix = "Compressed";
 
-			sprintf(hcrop_label, "%d", crop.horizontal);
-			sprintf(vcrop_label, "%d", crop.vertical);
+			snprintf(hcrop_label, sizeof(hcrop_label), "%d", crop.horizontal);
+			snprintf(vcrop_label, sizeof(vcrop_label), "%d", crop.vertical);
 		    FindMenuItem(menu_array, 6)->suffix = hcrop_label;
 			FindMenuItem(menu_array, 7)->suffix = vcrop_label; 
 			
 			SetItemChecked(menu_array, 8, lockaspect);
-			sprintf(hshift_label, "%d", offset.horizontal);
-			sprintf(vshift_label, "%d", offset.vertical);
+			snprintf(hshift_label, sizeof(hshift_label), "%d", offset.horizontal);
+			snprintf(vshift_label, sizeof(vshift_label), "%d", offset.vertical);
 			FindMenuItem(menu_array, 9)->suffix = hshift_label;
 			FindMenuItem(menu_array, 10)->suffix = vshift_label;
 			
@@ -2348,14 +2435,14 @@ static void WindowsOptions(void)
 					changewindowsize(RESET, 0);
 					refreshframe();
 					PLATFORM_DisplayScreen(); /* force rebuild of the clipping frame */
-					sprintf(native_height_label, "[Height: %d]", frameparams.view.bottom - frameparams.view.top);
-					sprintf(native_width_label, "[Width:  %d]", frameparams.view.right - frameparams.view.left);
+					snprintf(native_height_label, sizeof(native_height_label), "[Height: %d]", frameparams.view.bottom - frameparams.view.top);
+					snprintf(native_width_label, sizeof(native_width_label), "[Width:  %d]", frameparams.view.right - frameparams.view.left);
 				}
 			}
 			break;
 		case 6:
 			if (rendermode != DIRECTDRAW)  {
-				sprintf(trim_value, "%d", crop.horizontal);
+				snprintf(trim_value, sizeof(trim_value), "%d", crop.horizontal);
 				if (UI_driver->fEditString("Enter value", trim_value, sizeof(trim_value))) {
 					if (atoi(trim_value) > 150) 
 						UI_driver->fMessage("Maximum X-Trim value is 150", 1);
@@ -2366,14 +2453,14 @@ static void WindowsOptions(void)
 						changewindowsize(RESET, 0);
 						refreshframe();
 						PLATFORM_DisplayScreen(); /* force rebuild of the clipping frame */
-						sprintf(native_width_label, "[Width:  %d]", frameparams.view.right - frameparams.view.left);
+						snprintf(native_width_label, sizeof(native_width_label), "[Width:  %d]", frameparams.view.right - frameparams.view.left);
 					}
 				}
 			}
 			break;
 		case 7:
 			if (rendermode != DIRECTDRAW)  {
-				sprintf(trim_value, "%d", crop.vertical);
+				snprintf(trim_value, sizeof(trim_value), "%d", crop.vertical);
 				if (UI_driver->fEditString("Enter value", trim_value, sizeof(trim_value))) {
 					if (atoi(trim_value) < 0) 
 						UI_driver->fMessage("Minimum Y-Trim value is 0", 1);
@@ -2384,7 +2471,7 @@ static void WindowsOptions(void)
 						changewindowsize(RESET, 0);
 						refreshframe();
 						PLATFORM_DisplayScreen(); /* force rebuild of the clipping frame */
-						sprintf(native_height_label, "[Height: %d]", frameparams.view.bottom - frameparams.view.top);
+						snprintf(native_height_label, sizeof(native_height_label), "[Height: %d]", frameparams.view.bottom - frameparams.view.top);
 					}
 				}
 			}
@@ -2398,7 +2485,7 @@ static void WindowsOptions(void)
 			break;
 		case 9:
 			if (rendermode != DIRECTDRAW)  {
-				sprintf(shift_value, "%d", offset.horizontal);
+				snprintf(shift_value, sizeof(shift_value), "%d", offset.horizontal);
 				if (UI_driver->fEditString("Enter value", shift_value, sizeof(shift_value))) {
 					if (atoi(shift_value) > 24) 
 						UI_driver->fMessage("Maximum horizontal offset is 24", 1);
@@ -2414,7 +2501,7 @@ static void WindowsOptions(void)
 			break;
 		case 10:
 			if (rendermode != DIRECTDRAW)  {
-				sprintf(shift_value, "%d", offset.vertical);
+				snprintf(shift_value, sizeof(shift_value), "%d", offset.vertical);
 				if (UI_driver->fEditString("Enter value", shift_value, sizeof(shift_value))) {
 					if (atoi(shift_value) > 50) 
 						UI_driver->fMessage("Maximum vertical offset is 50", 1);
@@ -2487,11 +2574,7 @@ static void KeyboardJoystickConfiguration(int joystick)
 {
 	char title[40];
 	int option2 = 0;
-#ifdef HAVE_SNPRINTF
 	snprintf(title, sizeof(title), "Define keys for joystick %d", joystick);
-#else
-	sprintf(title, "Define keys for joystick %d", joystick);
-#endif
 	for(;;) {
 		int j0d;
 		for(j0d = 0; j0d <= 4; j0d++)
@@ -2543,7 +2626,7 @@ static void ConfigureControllerButtons(int stick)
 	char title[40];
 	int option2 = 0;
 	
-	sprintf(title, "Define keys for controller %d", stick + 1);
+	snprintf(title, sizeof(title), "Define keys for controller %d", stick + 1);
 	for(;;) {
 		for(i = 0; i <= 8; i++) 
 			PLATFORM_GetButtonAssignments(stick, i, buttons[stick][i], sizeof(buttons[stick][i]));
@@ -2994,13 +3077,13 @@ void UI_Run(void)
 
 #ifdef DIRECTX
 	setcursor();
-	sprintf(desktopreslabel, "Desktop [%dx%d]", origScreenWidth, origScreenHeight);
-	sprintf(hcrop_label, "%d", crop.horizontal);
-	sprintf(vcrop_label, "%d", crop.vertical);
-	sprintf(hshift_label, "%d", offset.horizontal);
-	sprintf(vshift_label, "%d", offset.vertical);
-	sprintf(native_width_label, "[Width:  %d]", frameparams.view.right - frameparams.view.left);
-	sprintf(native_height_label, "[Height: %d]", frameparams.view.bottom - frameparams.view.top);
+	snprintf(desktopreslabel, sizeof(desktopreslabel), "Desktop [%dx%d]", origScreenWidth, origScreenHeight);
+	snprintf(hcrop_label, sizeof(hcrop_label), "%d", crop.horizontal);
+	snprintf(vcrop_label, sizeof(vcrop_label), "%d", crop.vertical);
+	snprintf(hshift_label, sizeof(hshift_label), "%d", offset.horizontal);
+	snprintf(vshift_label, sizeof(vshift_label), "%d", offset.vertical);
+	snprintf(native_width_label, sizeof(native_width_label), "[Width:  %d]", frameparams.view.right - frameparams.view.left);
+	snprintf(native_height_label, sizeof(native_height_label), "[Height: %d]", frameparams.view.bottom - frameparams.view.top);
 	if (useconsole)
 		strcpy(monitor_label, "Enter Monitor");
 	else
@@ -3131,22 +3214,17 @@ void UI_Run(void)
 #elif defined(DREAMCAST)
 			AboutAtariDC();
 			break;
-#elif defined(DIRECTX)
-			if (useconsole) {
-				if (PLATFORM_Exit(TRUE)) 
-					done = TRUE;
-					break;
-			}
-			else {
+#else
+#if defined(DIRECTX)
+			if (!useconsole) {
 				UI_driver->fMessage("Console required for monitor", 1);
 				break;
-			}				
-#else
-			if (PLATFORM_Exit(TRUE)) {
-				done = TRUE;
-				break;
 			}
+#endif /* DIRECTX */
+			if (Atari800_Exit(TRUE))
+				break;
 			/* if 'quit' typed in monitor, exit emulator */
+			exit(0);
 #endif
 		case UI_MENU_EXIT:
 			Atari800_Exit(FALSE);
@@ -3194,7 +3272,7 @@ int CrashMenu(void)
 	};
 
 	int option = 0;
-	sprintf(cim_info, "Code $%02X (CIM) at address $%04X", UI_crash_code, UI_crash_address);
+	snprintf(cim_info, sizeof(cim_info), "Code $%02X (CIM) at address $%04X", UI_crash_code, UI_crash_address);
 
 	for (;;) {
 		option = UI_driver->fSelect("!!! The Atari computer has crashed !!!", 0, option, menu_array, NULL);

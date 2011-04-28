@@ -1,7 +1,7 @@
 dnl   configure.ac - Autoconf script for building configure
 dnl
 dnl   Copyright (C) 2001 Krzysztof Nikiel
-dnl   Copyright (C) 2001-2009 Atari800 development team (see DOC/CREDITS)
+dnl   Copyright (C) 2001-2011 Atari800 development team (see DOC/CREDITS)
 dnl
 dnl   This file is part of the Atari800 emulator project which emulates
 dnl   the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -21,7 +21,7 @@ dnl   along with Atari800; if not, write to the Free Software
 dnl   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 AC_PREREQ(2.57)
-AC_INIT(Atari800, 2.2.0, pstehlik@sophics.cz)
+AC_INIT(Atari800, 2.2.1, pstehlik@sophics.cz)
 AC_CONFIG_SRCDIR(atari.c)
 AC_CONFIG_HEADER(config.h)
 
@@ -168,17 +168,9 @@ if [[ "$a8_target" != "android" ]]; then
 fi
 case "$a8_target" in
     sdl)
-        sdlcheck="X_`sdl-config --cflags`"
-        if [[ "$sdlcheck" != "X_" ]]; then
-            CFLAGS="$CFLAGS `sdl-config --cflags`"
-dnl Don't redefine main -- SDL.h will do it for us in atari_sdl.c  Otherwise
-dnl the autoconf tests don't work.
-            if [[ "$a8_host" = "win" ]]; then
-                CFLAGS=${CFLAGS/-Dmain=SDL_main/}
-            fi
-        else
-            AC_MSG_ERROR("No output from sdl-config!  Is sdl-config installed?")
-        fi
+        dnl Check for SDL
+        SDL_VERSION=1.2.0
+        AM_PATH_SDL($SDL_VERSION, :, AC_MSG_ERROR([*** SDL version $SDL_VERSION not found!]))
         ;;
     x11*)
         if [[ "X_$x_includes" != "X_" ]]; then
@@ -331,21 +323,11 @@ case "$a8_target" in
         SUPPORTS_SYNCHRONIZED_SOUND="yes"
         WANT_XEP80_EMULATION=yes
         WANT_NTSC_FILTER=yes
-        LIBS="$LIBS `sdl-config --libs`"
         OBJS="videomode.o sdl/main.o sdl/video.o sdl/video_sw.o sdl/input.o sdl/palette.o"
         CFLAGS="$CFLAGS -ansi -pedantic -Waggregate-return -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Winline"
         if [[ "$a8_host" != "beos" ]]; then
 dnl BeOS has a real issue with redundant-decls
             CFLAGS="$CFLAGS -Wredundant-decls"
-        fi
-        if [[ "$a8_host" = "win" ]]; then
-dnl Avoid making stdout.txt on Windows sdl target by compiling our own SDL_main
-dnl Get SDL_win32_main.c from the SDL source and copy it to the src directory.
-            LIBS=${LIBS/-lSDLmain/}
-            OBJS="$OBJS SDL_win32_main.o"
-            CFLAGS="$CFLAGS -DNO_STDIO_REDIRECT"
-dnl Don't make this a windowed app, make it a console app.
-            LIBS=${LIBS/-mwindows/}
         fi
         AC_DEFINE(PBI_PROTO80,1,[A prototype 80 column card for the 1090 expansion box.])
         OBJS="$OBJS pbi_proto80.o"
@@ -738,15 +720,16 @@ if [[ "$WANT_SOUND" = "yes" ]]; then
                 fi
                 ;;
             falcon)
-                OBJS="$OBJS sound_falcon.o falcon/sound_dma.o"
-                ;;
-            linux)
                 if [[ "$a8_target" = "sdl" ]]; then
                     OBJS="$OBJS sdl/sound.o"
-                fi
+                else
+                    OBJS="$OBJS sound_falcon.o falcon/sound_dma.o"
+		fi
                 ;;
             *)
-                if [[ "$SUPPORTS_SOUND_OSS" = "yes" ]]; then
+                if [[ "$a8_target" = "sdl" ]]; then
+                    OBJS="$OBJS sdl/sound.o"
+	        elif [[ "$SUPPORTS_SOUND_OSS" = "yes" ]]; then
                     OBJS="$OBJS sound_oss.o"
                 else
                     AC_MSG_ERROR([Sound support not available, re-run configure with --disable-sound])
@@ -907,7 +890,25 @@ if [[ "$SUPPORTS_RDEVICE" = "yes" ]]; then
     fi
 fi
 
-dnl Set SDL-OpenGL availability
+dnl Modifications to CFLAGS and LIBS not possible before earlier feature tests...
+
+case "$a8_target" in
+    sdl)
+        LIBS="$LIBS $SDL_LIBS"
+        CFLAGS="$CFLAGS $SDL_CFLAGS"
+        if [[ "$a8_host" = "win" ]]; then
+dnl Avoid making stdout.txt on Windows sdl target by compiling our own SDL_main
+dnl Get SDL_win32_main.c from the SDL source and copy it to the src directory.
+            LIBS=${LIBS/-lSDLmain/}
+            OBJS="$OBJS SDL_win32_main.o"
+            CFLAGS="$CFLAGS -DNO_STDIO_REDIRECT"
+dnl Don't make this a windowed app, make it a console app.
+            LIBS=${LIBS/-mwindows/}
+        fi
+        ;;
+esac
+
+dnl Set SDL-OpenGL availability...
 
 AC_ARG_ENABLE(opengl,
     AC_HELP_STRING(--enable-opengl,[Use OpenGL for graphics - only in SDL target (default=on if OpenGL installed)]),

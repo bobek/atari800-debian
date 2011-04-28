@@ -10,8 +10,8 @@ Vcs-Browser: https://github.com/bobek/aranym800-debian
 Package: atari800
 Architecture: any
 Depends: ${shlibs:Depends}
-Description: Atari emulator for SDL
- This is an Atari emulator uses SDL.
+Description: Atari800 emulator for SDL
+ This is an Atari800 emulator.
  It can emulate the Atari 800, 800XL, 130XE, and 5200 systems.
  .
  The Atari Operating System ROMs are not available with this package, due to

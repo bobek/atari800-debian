@@ -18,6 +18,8 @@
     <string name="mountnonextdisk">No next disk image found</string>
     <string name="diskboot">Booting image %s</string>
     <string name="none">None</string>
+    <string name="left">Left</string>
+    <string name="right">Right</string>
 	<string name="menu_preferences">Preferences</string>
     <string name="cancel">Cancel</string>
     <string name="ok">OK</string>
@@ -85,6 +87,17 @@
 							<br><b>*</b> Added the auto frameskip option
 							<br><b>*</b> Added the new <i>Joystick Grace Area</i> preference
 							<br>Thanks to the bug/feature reporters!
+							]]></string>
+	<string name="changesv1_2"><![CDATA[
+							<i>Changes for version 1.2:</i><br>
+							<br><b>*</b> New disk management menu (long press in the file selector)
+							<br><b>*</b> New screen cropping preferences
+							<br><b>*</b> New arrow key derotation preference for external keyboards
+							<br><b>*</b> DPAD-CENTER and tilde (~) now map to Escape key
+							<br><b>*</b> Atari800 core version 2.2.0
+							<br><b>*</b> Fix rare sound-related crashes
+							<br><b>*</b> Various fixes and improvements
+							<br><br>Thanks to the bug/feature reporters!
 							]]></string>
 	<string name="atariupdate">Atari800 Update</string>
 
@@ -176,4 +189,10 @@
 	<string name="pref_anchor_sum">Fix on-screen joystick to current position</string>
 	<string name="pref_joygrace">Joystick Grace Area</string>
 	<string name="pref_joygrace_sum">Area extension around the joystick which results in no recentering</string>
+	<string name="pref_crophoriz">Crop Horizontally</string>
+	<string name="pref_crophoriz_sum">Width in pixels of original screen to show</string>
+	<string name="pref_cropvert">Crop Vertically</string>
+	<string name="pref_cropvert_sum">Height in pixels of original screen to show</string>
+	<string name="pref_derotkeys">Derotate Arrow Keys</string>
+	<string name="pref_derotkeys_sum">Fix external keyboard arrow keys when display is rotated</string>
 </resources>
