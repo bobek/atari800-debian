@@ -27,6 +27,7 @@
 
 #include "af80.h"
 #include "atari.h"
+#include "cfg.h"
 #include "colours.h"
 #include "config.h"
 #include "filter_ntsc.h"
@@ -43,13 +44,12 @@
 #include "sdl/video.h"
 #include "sdl/video_gl.h"
 
-static int currently_windowed = FALSE;
 static int currently_rotated = FALSE;
 /* If TRUE, then 32 bit, else 16 bit screen. */
 static int bpp_32 = FALSE;
 
 int SDL_VIDEO_GL_filtering = 0;
-/*int SDL_VIDEO_GL_sync = 0;*/
+int SDL_VIDEO_GL_pixel_format = SDL_VIDEO_GL_PIXEL_FORMAT_BGR16;
 
 /* Path to the OpenGL shared library. */
 static char const *library_path = NULL;
@@ -92,12 +92,6 @@ struct
 	GLboolean(APIENTRY*UnmapBuffer)(GLenum);
 } gl;
 
-static SDL_Surface *MainScreen = NULL;
-static union {
-	Uint16 bpp16[256];	/* 16-bit palette */
-	Uint32 bpp32[256];	/* 32-bit palette */
-} palette;
-
 static void DisplayNormal(GLvoid *dest);
 static void DisplayNTSCEmu(GLvoid *dest);
 static void DisplayXEP80(GLvoid *dest);
@@ -112,15 +106,14 @@ static void (* const blit_funcs[VIDEOMODE_MODE_SIZE])(GLvoid *) = {
 	&DisplayAF80
 };
 
-static VIDEOMODE_MODE_t current_display_mode = VIDEOMODE_MODE_NORMAL;
-
 /* GL textures - [0] is screen, [1] is scanlines. */
 static GLuint textures[2];
 
-/* Indicates whether Pixel Buffer Objects GL extension is available and should be
-   used. Available from OpenGL 2.1, it gives a significant boost in blit speed. */
-static int use_pbo;
+int SDL_VIDEO_GL_pbo = TRUE;
 
+/* Indicates whether Pixel Buffer Objects GL extension is available.
+   Available from OpenGL 2.1, it gives a significant boost in blit speed. */
+static int pbo_available;
 /* Name of the main screen Pixel Buffer Object. */
 static GLuint screen_pbo;
 
@@ -143,6 +136,29 @@ static int paint_scanlines;
 /* GL Display List for placing the screen and scanline textures on the screen. */
 static GLuint screen_dlist;
 
+static char const * const pixel_format_cfg_strings[SDL_VIDEO_GL_PIXEL_FORMAT_SIZE] = {
+	"BGR16",
+	"RGB16",
+	"BGRA32",
+	"ARGB32"
+};
+
+typedef struct pixel_format_t {
+	GLint internal_format;
+	GLenum format;
+	GLenum type;
+	Uint32 black_pixel;
+	void(*calc_pal_func)(VIDEOMODE_MODE_t mode);
+	void(*ntsc_blit_func)(atari_ntsc_t const*, ATARI_NTSC_IN_T const*, long, int, int, void*, long);
+} pixel_format_t;
+
+pixel_format_t const pixel_formats[4] = {
+	{ GL_RGB5, GL_RGB, GL_UNSIGNED_SHORT_5_6_5_REV, 0x0000, &SDL_PALETTE_Calculate16_B5G6R5, &atari_ntsc_blit_bgr16 }, 
+	{ GL_RGB5, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, 0x0000, &SDL_PALETTE_Calculate16_R5G6B5, &atari_ntsc_blit_rgb16 }, /* NVIDIA 16-bit */
+	{ GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8, 0x000000ff, &SDL_PALETTE_Calculate32_B8G8R8A8, &atari_ntsc_blit_bgra32 },
+	{ GL_RGBA8, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, 0xff000000, &SDL_PALETTE_Calculate32_A8R8G8B8, &atari_ntsc_blit_argb32 } /* NVIDIA 32-bit */
+};
+
 /* Conversion between function pointers and 'void *' is forbidden in
    ISO C, but unfortunately unavoidable when using SDL_GL_GetProcAddress.
    So the code below is non-portable and gives a warning with gcc -ansi
@@ -158,14 +174,19 @@ static void (*GetGlFunc(const char* s))(void)
 /* Alocates memory for the screen texture, if needed. */
 static void AllocTexture(void)
 {
-	if (!use_pbo && screen_texture == NULL)
+	if (!SDL_VIDEO_GL_pbo && screen_texture == NULL)
+		/* The largest width is in NTSC-filtered full overscan mode - 672 pixels.
+		   The largest height is in XEP-80 mode - 275 pixels. Add 1 pixel at each side
+		   to nicely render screen borders. The texture is 1024x512, which is more than
+		   enough - although it's rounded to powers of 2 to be more compatible (earlier
+		   versions of OpenGL supported only textures with width/height of powers of 2). */
 		screen_texture = Util_malloc(1024*512*(bpp_32 ? sizeof(Uint32) : sizeof(Uint16)));
 }
 
 /* Frees memory for the screen texture, if needed. */
 static void FreeTexture(void)
 {
-	if (!use_pbo && screen_texture != NULL) {
+	if (screen_texture != NULL) {
 		free(screen_texture);
 		screen_texture = NULL;
 	}
@@ -202,14 +223,14 @@ static void InitGlContext(void)
 	gl.MatrixMode(GL_MODELVIEW);
 	gl.LoadIdentity();
 	screen_dlist = gl.GenLists(1);
-	if (use_pbo)
+	if (SDL_VIDEO_GL_pbo)
 		gl.GenBuffers(1, &screen_pbo);
 }
 
 /* Cleans up the structures allocated in InitGlContext. */
 static void CleanGlContext(void)
 {
-		if (use_pbo)
+		if (SDL_VIDEO_GL_pbo)
 			gl.DeleteBuffers(1, &screen_pbo);
 		gl.DeleteLists(screen_dlist, 1);
 		gl.DeleteTextures(2, textures);
@@ -218,17 +239,12 @@ static void CleanGlContext(void)
 /* Sets up the initial parameters of all used textures and the PBO. */
 static void InitGlTextures(void)
 {
-	/* Screen texture. */
+	/* Texture for the display surface. */
 	gl.BindTexture(GL_TEXTURE_2D, textures[0]);
-	if (bpp_32)
-		gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1024, 512, 0,
-		              GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
-		              NULL);
-	else
-		gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGB5, 1024, 512, 0,
-		              GL_RGB, GL_UNSIGNED_SHORT_5_6_5,
-		              NULL);
-	/* Scanlines texture. */
+	gl.TexImage2D(GL_TEXTURE_2D, 0, pixel_formats[SDL_VIDEO_GL_pixel_format].internal_format, 1024, 512, 0,
+	              pixel_formats[SDL_VIDEO_GL_pixel_format].format, pixel_formats[SDL_VIDEO_GL_pixel_format].type,
+	              NULL);
+	/* Texture for scanlines. */
 	gl.BindTexture(GL_TEXTURE_2D, textures[1]);
 	if (bpp_32)
 		gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 2, 0,
@@ -238,7 +254,7 @@ static void InitGlTextures(void)
 		gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 2, 0,
 		              GL_BGRA, GL_UNSIGNED_SHORT_1_5_5_5_REV,
 		              scanline_tex16);
-	if (use_pbo) {
+	if (SDL_VIDEO_GL_pbo) {
 		gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, screen_pbo);
 		gl.BufferData(GL_PIXEL_UNPACK_BUFFER_ARB, 1024*512*(bpp_32 ? sizeof(Uint32) : sizeof(Uint16)), NULL, GL_DYNAMIC_DRAW_ARB);
 		gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, 0);
@@ -247,73 +263,21 @@ static void InitGlTextures(void)
 
 void SDL_VIDEO_GL_Cleanup(void)
 {
-	if (MainScreen != NULL) {
+	if (SDL_VIDEO_screen != NULL && (SDL_VIDEO_screen->flags & SDL_OPENGL) == SDL_OPENGL)
 		CleanGlContext();
-		MainScreen = NULL;
-	}
 	FreeTexture();
 }
 
 /* Calculate the palette in the 32-bit BGRA format, or 16-bit BGR 5-6-5 format. */
 static void CalcPalette(VIDEOMODE_MODE_t mode)
 {
-	int *pal = SDL_PALETTE_tab[mode].palette;
-	int size = SDL_PALETTE_tab[mode].size;
-	int i;
-	for (i = 0; i < size; i++) {
-		int rgb = pal[i];
-		if (bpp_32) /* BGRA 8-8-8-8-REV */
-			palette.bpp32[i] = rgb | 0xff000000;
-		else /* RGB 5-6-5 */
-			palette.bpp16[i] = ((rgb & 0x00f80000) >> 8) | ((rgb & 0x0000fc00) >> 5) | ((rgb & 0x000000f8) >> 3);
-	}
+	if (mode != VIDEOMODE_MODE_NTSC_FILTER)
+		(*pixel_formats[SDL_VIDEO_GL_pixel_format].calc_pal_func)(mode);
 }
 
 void SDL_VIDEO_GL_PaletteUpdate(void)
 {
-	CalcPalette(current_display_mode);
-	if (current_display_mode == VIDEOMODE_MODE_NTSC_FILTER)
-		FILTER_NTSC_Update(FILTER_NTSC_emu);
-}
-
-static void ModeInfo(void)
-{
-	char *fullstring;
-	if (currently_windowed)
-		fullstring = "windowed";
-	else
-		fullstring = "fullscreen";
-	Log_print("Video Mode: %dx%dx%d %s, texture depth: %dbpp", MainScreen->w, MainScreen->h,
-		   MainScreen->format->BitsPerPixel, fullstring, SDL_VIDEO_bpp);
-}
-
-static void SetVideoMode(int w, int h)
-{
-	Uint32 flags = SDL_OPENGL | (currently_windowed ? SDL_RESIZABLE : SDL_FULLSCREEN);
-	/* In OpenGL mode, the SDL screen is always opened with the default
-	   desktop depth - it proved to be the most compatible way. */
-	MainScreen = SDL_SetVideoMode(w, h, 0, flags);
-	if (MainScreen == NULL) {
-		Log_print("Setting Video Mode: %dx%dx0 failed: %s", w, h, SDL_GetError());
-		Log_flushlog();
-		exit(-1);
-	}
-	SDL_VIDEO_width = MainScreen->w;
-	SDL_VIDEO_height = MainScreen->h;
-}
-
-static void UpdateNtscFilter(VIDEOMODE_MODE_t mode)
-{
-	if (mode != VIDEOMODE_MODE_NTSC_FILTER && FILTER_NTSC_emu != NULL) {
-		/* Turning filter off */
-		FILTER_NTSC_Delete(FILTER_NTSC_emu);
-		FILTER_NTSC_emu = NULL;
-	}
-	else if (mode == VIDEOMODE_MODE_NTSC_FILTER && FILTER_NTSC_emu == NULL) {
-		/* Turning filter on */
-		FILTER_NTSC_emu = FILTER_NTSC_New();
-		FILTER_NTSC_Update(FILTER_NTSC_emu);
-	}
+	CalcPalette(SDL_VIDEO_current_display_mode);
 }
 
 /* Set parameters that will shift the screen and scanline textures a bit,
@@ -333,7 +297,7 @@ static void SetSubpixelShifts(void)
 	vmult = dest_height / VIDEOMODE_src_height;
 	hmult = dest_width / VIDEOMODE_src_width;
 
-	paint_scanlines = vmult >= 2;
+	paint_scanlines = vmult >= 2 && SDL_VIDEO_scanlines_percentage != 0;
 
 	if (dest_height % VIDEOMODE_src_height == 0 &&
 	    SDL_VIDEO_GL_filtering &&
@@ -420,11 +384,11 @@ static void SetGlDisplayList(void)
 }
 
 /* Resets the screen texture/PBO to all-black. */
-static void CleanTexture(void)
+static void CleanDisplayTexture(void)
 {
 	GLvoid *ptr;
 	gl.BindTexture(GL_TEXTURE_2D, textures[0]);
-	if (use_pbo) {
+	if (SDL_VIDEO_GL_pbo) {
 		gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, screen_pbo);
 		ptr = gl.MapBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, GL_WRITE_ONLY_ARB);
 	}
@@ -435,11 +399,11 @@ static void CleanTexture(void)
 		unsigned int i;
 		for (i = 0; i < 1024*512; i ++)
 			/* Set alpha channel to full opacity. */
-			tex[i] = 0xff000000;
+			tex[i] = pixel_formats[SDL_VIDEO_GL_pixel_format].black_pixel;
 
 	} else
 		memset(ptr, 0x00, 1024*512*sizeof(Uint16));
-	if (use_pbo) {
+	if (SDL_VIDEO_GL_pbo) {
 		gl.UnmapBuffer(GL_PIXEL_UNPACK_BUFFER_ARB);
 		ptr = NULL;
 	}
@@ -451,247 +415,13 @@ static void CleanTexture(void)
 		gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1024, 512,
 				GL_RGB, GL_UNSIGNED_SHORT_5_6_5,
 				ptr);
-	if (use_pbo)
+	if (SDL_VIDEO_GL_pbo)
 		gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, 0);
 }
 
-/* Check availability of Pixel Buffer Objests extension. */
-static int InitGlPbo(void)
+/* Sets pointers to OpenGL functions. Returns TRUE on success, FALSE on failure. */
+static int InitGlFunctions(void)
 {
-	const GLubyte *extensions = gl.GetString(GL_EXTENSIONS);
-	if (!strstr((char *)extensions, "EXT_pixel_buffer_object")) {
-		return FALSE;
-	}
-	if ((gl.GenBuffers = (void(APIENTRY*)(GLsizei, GLuint*))GetGlFunc("glGenBuffersARB")) == NULL ||
-	    (gl.DeleteBuffers = (void(APIENTRY*)(GLsizei, const GLuint*))GetGlFunc("glDeleteBuffersARB")) == NULL ||
-	    (gl.BindBuffer = (void(APIENTRY*)(GLenum, GLuint))GetGlFunc("glBindBufferARB")) == NULL ||
-	    (gl.BufferData = (void(APIENTRY*)(GLenum, GLsizeiptr, const GLvoid*, GLenum))GetGlFunc("glBufferDataARB")) == NULL ||
-	    (gl.MapBuffer = (void*(APIENTRY*)(GLenum, GLenum))GetGlFunc("glMapBufferARB")) == NULL ||
-	    (gl.UnmapBuffer = (GLboolean(APIENTRY*)(GLenum))GetGlFunc("glUnmapBufferARB")) == NULL)
-		return FALSE;
-
-	return TRUE;
-}
-
-int SDL_VIDEO_GL_SetVideoMode(VIDEOMODE_resolution_t const *res, int windowed, VIDEOMODE_MODE_t mode, int rotate90, int window_resized)
-{
-	int new = MainScreen == NULL; /* TRUE means the SDL/GL screen was not yet initialised */
-	int bpp_changed; /* TRUE means the BPP setting got changed */
-	int context_updated = FALSE; /* TRUE means the OpenGL context has been recreated */
-	currently_rotated = rotate90;
-
-	if (new || MainScreen->w != res->width || MainScreen->h != res->height ||
-	    currently_windowed != windowed || window_resized) {
-		currently_windowed = windowed;
-		if (!new) {
-			CleanGlContext();
-		}
-		SetVideoMode(res->width, res->height);
-		if (new) {
-			GLint tex_size;
-			gl.GetIntegerv(GL_MAX_TEXTURE_SIZE, & tex_size);
-			if (tex_size < 1024) {
-				Log_print("Supported texture size is too small (%d), need 1024. OpenGL not available.", tex_size);
-				FreeTexture();
-				MainScreen = NULL;
-				return FALSE;
-			}
-			Log_print("OpenGL version: %s", gl.GetString(GL_VERSION));
-			use_pbo = InitGlPbo();
-			if (use_pbo)
-				Log_print("OpenGL Pixel Buffer Objects available.");
-			else
-				Log_print("OpenGL Pixel Buffer Objects not available.");
-		}
-		InitGlContext();
-		context_updated = TRUE;
-	}
-
-	if (SDL_VIDEO_bpp == 0)
-		SDL_VIDEO_bpp = MainScreen->format->BitsPerPixel;
-	if (SDL_VIDEO_bpp != 16 && SDL_VIDEO_bpp != 32)
-		SDL_VIDEO_bpp = 16;
-	bpp_changed = (bpp_32 && SDL_VIDEO_bpp != 32) || (!bpp_32 && SDL_VIDEO_bpp != 16);
-	
-	if (new || bpp_changed) {
-		FreeTexture();
-		bpp_32 = SDL_VIDEO_bpp == 32;
-		AllocTexture();
-	}
-	
-	if (context_updated || bpp_changed)
-		InitGlTextures();
-	
-	if (new || bpp_changed
-	    || SDL_PALETTE_tab[mode].palette != SDL_PALETTE_tab[current_display_mode].palette) {
-		CalcPalette(mode);
-	}
-
-	UpdateNtscFilter(mode);
-	current_display_mode = mode;
-	SDL_ShowCursor(SDL_DISABLE);	/* hide mouse cursor */
-	ModeInfo();
-	gl.Viewport(VIDEOMODE_dest_offset_left, VIDEOMODE_dest_offset_top, VIDEOMODE_dest_width, VIDEOMODE_dest_height);
-	SetSubpixelShifts();
-	SetGlDisplayList();
-	CleanTexture();
-	SDL_VIDEO_GL_DisplayScreen();
-	return TRUE;
-}
-
-int SDL_VIDEO_GL_SupportsVideomode(VIDEOMODE_MODE_t mode, int stretch, int rotate90)
-{
-	/* OpenGL supports rotation and stretching in all display modes. */
-	return TRUE;
-}
-
-static void DisplayNormal(GLvoid *dest)
-{
-	Uint8 *screen = (Uint8 *)Screen_atari + Screen_WIDTH * VIDEOMODE_src_offset_top + VIDEOMODE_src_offset_left;
-	if (bpp_32)
-		SDL_VIDEO_BlitNormal32((Uint32*)dest, screen, VIDEOMODE_actual_width, VIDEOMODE_src_width, VIDEOMODE_src_height, palette.bpp32);
-	else {
-		int pitch;
-		if (VIDEOMODE_actual_width & 0x01)
-			pitch = VIDEOMODE_actual_width / 2 + 1;
-		else
-			pitch = VIDEOMODE_actual_width / 2;
-		SDL_VIDEO_BlitNormal16((Uint32*)dest, screen, pitch, VIDEOMODE_src_width, VIDEOMODE_src_height, palette.bpp16);
-	}
-}
-
-static void DisplayNTSCEmu(GLvoid *dest)
-{
-	if (bpp_32)
-		atari_ntsc_blit32(FILTER_NTSC_emu,
-		                  (ATARI_NTSC_IN_T *) ((UBYTE *)Screen_atari + Screen_WIDTH * VIDEOMODE_src_offset_top + VIDEOMODE_src_offset_left),
-		                  Screen_WIDTH,
-		                  VIDEOMODE_src_width,
-		                  VIDEOMODE_src_height,
-		                  (Uint32*)dest,
-		                  VIDEOMODE_actual_width * 4);
-	else
-		atari_ntsc_blit16(FILTER_NTSC_emu,
-		                  (ATARI_NTSC_IN_T *) ((UBYTE *)Screen_atari + Screen_WIDTH * VIDEOMODE_src_offset_top + VIDEOMODE_src_offset_left),
-		                  Screen_WIDTH,
-		                  VIDEOMODE_src_width,
-		                  VIDEOMODE_src_height,
-		                  (Uint16*)dest,
-		                  VIDEOMODE_actual_width * 2);
-}
-
-static void DisplayXEP80(GLvoid *dest)
-{
-	static int xep80Frame = 0;
-	Uint8 *screen;
-	xep80Frame++;
-	if (xep80Frame == 60) xep80Frame = 0;
-	if (xep80Frame > 29)
-		screen = XEP80_screen_1;
-	else
-		screen = XEP80_screen_2;
-
-	screen += XEP80_SCRN_WIDTH * VIDEOMODE_src_offset_top + VIDEOMODE_src_offset_left;
-	if (bpp_32)
-		SDL_VIDEO_BlitXEP80_32((Uint32*)dest, screen, VIDEOMODE_actual_width, VIDEOMODE_src_width, VIDEOMODE_src_height, palette.bpp32);
-	else
-		SDL_VIDEO_BlitXEP80_16((Uint32*)dest, screen, VIDEOMODE_actual_width / 2, VIDEOMODE_src_width, VIDEOMODE_src_height, palette.bpp16);
-}
-
-static void DisplayProto80(GLvoid *dest)
-{
-	int first_column = (VIDEOMODE_src_offset_left+7) / 8;
-	int last_column = (VIDEOMODE_src_offset_left + VIDEOMODE_src_width) / 8;
-	int first_line = VIDEOMODE_src_offset_top;
-	int last_line = first_line + VIDEOMODE_src_height;
-	if (bpp_32)
-		SDL_VIDEO_BlitProto80_32((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width, first_line, last_line, palette.bpp32);
-	else
-		SDL_VIDEO_BlitProto80_16((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width/2, first_line, last_line, palette.bpp16);
-}
-
-static void DisplayAF80(GLvoid *dest)
-{
-	int first_column = (VIDEOMODE_src_offset_left+7) / 8;
-	int last_column = (VIDEOMODE_src_offset_left + VIDEOMODE_src_width) / 8;
-	int first_line = VIDEOMODE_src_offset_top;
-	int last_line = first_line + VIDEOMODE_src_height;
-	static int AF80Frame = 0;
-	int blink;
-	AF80Frame++;
-	if (AF80Frame == 60) AF80Frame = 0;
-	blink = AF80Frame >= 30;
-	if (bpp_32)
-		SDL_VIDEO_BlitAF80_32((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width, first_line, last_line, blink, palette.bpp32);
-	else
-		SDL_VIDEO_BlitAF80_16((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width/2, first_line, last_line, blink, palette.bpp16);
-}
-
-void SDL_VIDEO_GL_DisplayScreen(void)
-{
-	gl.BindTexture(GL_TEXTURE_2D, textures[0]);
-	if (use_pbo) {
-		GLvoid *ptr;
-		gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, screen_pbo);
-		ptr = gl.MapBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, GL_WRITE_ONLY_ARB);
-		(*blit_funcs[current_display_mode])(ptr);
-		gl.UnmapBuffer(GL_PIXEL_UNPACK_BUFFER_ARB);
-		if (bpp_32)
-			gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VIDEOMODE_actual_width, VIDEOMODE_src_height,
-			                 GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
-			                 NULL);
-		else
-			gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VIDEOMODE_actual_width, VIDEOMODE_src_height,
-			                 GL_RGB, GL_UNSIGNED_SHORT_5_6_5,
-			                 NULL);
-		gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, 0);
-	} else {
-		(*blit_funcs[current_display_mode])(screen_texture);
-		if (bpp_32)
-			gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VIDEOMODE_actual_width, VIDEOMODE_src_height,
-			                 GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
-			                 screen_texture);
-		else
-			gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VIDEOMODE_actual_width, VIDEOMODE_src_height,
-			                 GL_RGB, GL_UNSIGNED_SHORT_5_6_5,
-			                 screen_texture);
-	}
-	gl.CallList(screen_dlist);
-	SDL_GL_SwapBuffers();
-}
-
-int SDL_VIDEO_GL_ReadConfig(char *option, char *parameters)
-{
-	if (strcmp(option, "BILINEAR_FILTERING") == 0)
-		return (SDL_VIDEO_GL_filtering = Util_sscanbool(parameters)) != -1;
-/*	if (strcmp(option, "SDL_VIDEO_GL_SYNC") == 0)
-		return (SDL_VIDEO_GL_sync = Util_sscanbool(parameters)) != -1;*/
-	else
-		return FALSE;
-}
-
-void SDL_VIDEO_GL_WriteConfig(FILE *fp)
-{
-	fprintf(fp, "BILINEAR_FILTERING=%d\n", SDL_VIDEO_GL_filtering);
-/*	fprintf(fp, "SDL_VIDEO_GL_SYNC=%d\n", SDL_VIDEO_GL_sync);*/
-}
-
-/* Detects OpenGL availablility and set GL function pointers. Returns whether OpenGL is available. */
-static int InitGl(void)
-{
-	if (SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1) < 0
-#if (SDL_MAJOR_VERSION > 1) || ((SDL_MINOR_VERSION > 2) || ((SDL_MINOR_VERSION == 2) && (SDL_PATCHLEVEL >= 10)))
-/*	    || SDL_GL_SetAttribute(SDL_GL_SWAP_CONTROL, SDL_VIDEO_GL_sync) < 0 */
-	    || SDL_GL_SetAttribute(SDL_GL_SWAP_CONTROL, 0) < 0
-#endif
-	   ) {
-		Log_print("Unable to set GL attribute: %s\n",SDL_GetError());
-		return FALSE;
-	}
-	if (SDL_GL_LoadLibrary(library_path) < 0) {
-		Log_print("Unable to dynamically open OpenGL library: %s\n",SDL_GetError());
-		return FALSE;
-	}
 	if ((gl.Viewport = (void(APIENTRY*)(GLint,GLint,GLsizei,GLsizei))GetGlFunc("glViewport")) == NULL ||
 	    (gl.ClearColor = (void(APIENTRY*)(GLfloat, GLfloat, GLfloat, GLfloat))GetGlFunc("glClearColor")) == NULL ||
 	    (gl.Clear = (void(APIENTRY*)(GLbitfield))GetGlFunc("glClear")) == NULL ||
@@ -720,8 +450,276 @@ static int InitGl(void)
 	    (gl.EndList = (void(APIENTRY*)(void))GetGlFunc("glEndList")) == NULL ||
 	    (gl.CallList = (void(APIENTRY*)(GLuint))GetGlFunc("glCallList")) == NULL)
 		return FALSE;
+	return TRUE;
+}
+
+/* Checks availability of Pixel Buffer Objests extension and sets pointers of PBO-related OpenGL functions.
+   Returns TRUE on success, FALSE on failure. */
+static int InitGlPbo(void)
+{
+	const GLubyte *extensions = gl.GetString(GL_EXTENSIONS);
+	if (!strstr((char *)extensions, "EXT_pixel_buffer_object")) {
+		return FALSE;
+	}
+	if ((gl.GenBuffers = (void(APIENTRY*)(GLsizei, GLuint*))GetGlFunc("glGenBuffersARB")) == NULL ||
+	    (gl.DeleteBuffers = (void(APIENTRY*)(GLsizei, const GLuint*))GetGlFunc("glDeleteBuffersARB")) == NULL ||
+	    (gl.BindBuffer = (void(APIENTRY*)(GLenum, GLuint))GetGlFunc("glBindBufferARB")) == NULL ||
+	    (gl.BufferData = (void(APIENTRY*)(GLenum, GLsizeiptr, const GLvoid*, GLenum))GetGlFunc("glBufferDataARB")) == NULL ||
+	    (gl.MapBuffer = (void*(APIENTRY*)(GLenum, GLenum))GetGlFunc("glMapBufferARB")) == NULL ||
+	    (gl.UnmapBuffer = (GLboolean(APIENTRY*)(GLenum))GetGlFunc("glUnmapBufferARB")) == NULL)
+		return FALSE;
 
 	return TRUE;
+}
+
+static void ModeInfo(void)
+{
+	char *fullstring = (SDL_VIDEO_screen->flags & SDL_FULLSCREEN) == SDL_FULLSCREEN ? "fullscreen" : "windowed";
+	Log_print("Video Mode: %dx%dx%d %s, pixel format: %s", SDL_VIDEO_screen->w, SDL_VIDEO_screen->h,
+		   SDL_VIDEO_screen->format->BitsPerPixel, fullstring, pixel_format_cfg_strings[SDL_VIDEO_GL_pixel_format]);
+}
+
+/* Return value of TRUE indicates that the video subsystem was reinitialised. */
+static int SetVideoMode(int w, int h, int windowed)
+{
+	int reinit = FALSE;
+	Uint32 flags = SDL_OPENGL | (windowed ? SDL_RESIZABLE : SDL_FULLSCREEN);
+	/* In OpenGL mode, the SDL screen is always opened with the default
+	   desktop depth - it is the most compatible way. */
+	SDL_VIDEO_screen = SDL_SetVideoMode(w, h, SDL_VIDEO_native_bpp, flags);
+	if (SDL_VIDEO_screen == NULL) {
+		/* Some SDL_SetVideoMode errors can be averted by reinitialising the SDL video subsystem. */
+		Log_print("Setting video mode: %dx%dx%d failed: %s. Reinitialising video.", w, h, SDL_VIDEO_native_bpp, SDL_GetError());
+		SDL_VIDEO_ReinitSDL();
+		reinit = TRUE;
+		SDL_VIDEO_screen = SDL_SetVideoMode(w, h, SDL_VIDEO_native_bpp, flags);
+		if (SDL_VIDEO_screen == NULL) {
+			Log_print("Setting Video Mode: %dx%dx%d failed: %s", w, h, SDL_VIDEO_native_bpp, SDL_GetError());
+			Log_flushlog();
+			exit(-1);
+		}
+	}
+	SDL_VIDEO_width = SDL_VIDEO_screen->w;
+	SDL_VIDEO_height = SDL_VIDEO_screen->h;
+	SDL_VIDEO_vsync_available = FALSE;
+	ModeInfo();
+	return reinit;
+}
+
+int SDL_VIDEO_GL_SetVideoMode(VIDEOMODE_resolution_t const *res, int windowed, VIDEOMODE_MODE_t mode, int rotate90)
+{
+	int new = SDL_VIDEO_screen == NULL; /* TRUE means the SDL/GL screen was not yet initialised */
+	int context_updated = FALSE; /* TRUE means the OpenGL context has been recreated */
+	currently_rotated = rotate90;
+
+	/* Call SetVideoMode only when there was change in width, height, or windowed/fullscreen. */
+	if (new || SDL_VIDEO_screen->w != res->width || SDL_VIDEO_screen->h != res->height ||
+	    ((SDL_VIDEO_screen->flags & SDL_FULLSCREEN) == SDL_FULLSCREEN) == windowed) {
+		if (!new) {
+			CleanGlContext();
+		}
+#if HAVE_WINDOWS_H
+		if (new && !windowed) {
+			/* Switching from fullscreen software mode directly to fullscreen OpenGL mode causes
+			   glitches on Windows (eg. when switched to windowed mode, the window would spontaneously
+			   go back to fullscreen each time it loses and regains focus). We avoid the issue by
+			   switching to a windowed non-OpenGL mode inbetween. */
+			SDL_SetVideoMode(320, 200, SDL_VIDEO_native_bpp, SDL_RESIZABLE);
+		}
+#endif /* HAVE_WINDOWS_H */
+		if (SetVideoMode(res->width, res->height, windowed))
+			/* Reinitialisation happened! Need to recreate GL context. */
+			new = TRUE;
+		if (!InitGlFunctions()) {
+			Log_print("Cannot use OpenGL - some functions are not provided.");
+			return FALSE;
+		}
+		if (new) {
+			GLint tex_size;
+			gl.GetIntegerv(GL_MAX_TEXTURE_SIZE, & tex_size);
+			if (tex_size < 1024) {
+				Log_print("Cannot use OpenGL - Supported texture size is too small (%d).", tex_size);
+				return FALSE;
+			}
+		}
+		pbo_available = InitGlPbo();
+		if (!pbo_available)
+			SDL_VIDEO_GL_pbo = FALSE;
+		if (new) {
+			Log_print("OpenGL initialized successfully. Version: %s", gl.GetString(GL_VERSION));
+			if (pbo_available)
+				Log_print("OpenGL Pixel Buffer Objects available.");
+			else
+			Log_print("OpenGL Pixel Buffer Objects not available.");
+		}
+		InitGlContext();
+		context_updated = TRUE;
+	}
+
+	if (new) {
+		FreeTexture();
+		AllocTexture();
+	}
+	
+	if (new
+	    || SDL_PALETTE_tab[mode].palette != SDL_PALETTE_tab[SDL_VIDEO_current_display_mode].palette)
+		CalcPalette(mode);
+
+	if (context_updated)
+		InitGlTextures();
+
+	SDL_ShowCursor(SDL_DISABLE);	/* hide mouse cursor */
+	gl.Viewport(VIDEOMODE_dest_offset_left, VIDEOMODE_dest_offset_top, VIDEOMODE_dest_width, VIDEOMODE_dest_height);
+	SetSubpixelShifts();
+	SetGlDisplayList();
+	CleanDisplayTexture();
+	return TRUE;
+}
+
+int SDL_VIDEO_GL_SupportsVideomode(VIDEOMODE_MODE_t mode, int stretch, int rotate90)
+{
+	/* OpenGL supports rotation and stretching in all display modes. */
+	return TRUE;
+}
+
+static void DisplayNormal(GLvoid *dest)
+{
+	Uint8 *screen = (Uint8 *)Screen_atari + Screen_WIDTH * VIDEOMODE_src_offset_top + VIDEOMODE_src_offset_left;
+	if (bpp_32)
+		SDL_VIDEO_BlitNormal32((Uint32*)dest, screen, VIDEOMODE_actual_width, VIDEOMODE_src_width, VIDEOMODE_src_height, SDL_PALETTE_buffer.bpp32);
+	else {
+		int pitch;
+		if (VIDEOMODE_actual_width & 0x01)
+			pitch = VIDEOMODE_actual_width / 2 + 1;
+		else
+			pitch = VIDEOMODE_actual_width / 2;
+		SDL_VIDEO_BlitNormal16((Uint32*)dest, screen, pitch, VIDEOMODE_src_width, VIDEOMODE_src_height, SDL_PALETTE_buffer.bpp16);
+	}
+}
+
+static void DisplayNTSCEmu(GLvoid *dest)
+{
+	(*pixel_formats[SDL_VIDEO_GL_pixel_format].ntsc_blit_func)(
+		FILTER_NTSC_emu,
+		(ATARI_NTSC_IN_T *) ((UBYTE *)Screen_atari + Screen_WIDTH * VIDEOMODE_src_offset_top + VIDEOMODE_src_offset_left),
+		Screen_WIDTH,
+		VIDEOMODE_src_width,
+		VIDEOMODE_src_height,
+		dest,
+		VIDEOMODE_actual_width * (bpp_32 ? 4 : 2));
+}
+
+static void DisplayXEP80(GLvoid *dest)
+{
+	static int xep80Frame = 0;
+	Uint8 *screen;
+	xep80Frame++;
+	if (xep80Frame == 60) xep80Frame = 0;
+	if (xep80Frame > 29)
+		screen = XEP80_screen_1;
+	else
+		screen = XEP80_screen_2;
+
+	screen += XEP80_SCRN_WIDTH * VIDEOMODE_src_offset_top + VIDEOMODE_src_offset_left;
+	if (bpp_32)
+		SDL_VIDEO_BlitXEP80_32((Uint32*)dest, screen, VIDEOMODE_actual_width, VIDEOMODE_src_width, VIDEOMODE_src_height, SDL_PALETTE_buffer.bpp32);
+	else
+		SDL_VIDEO_BlitXEP80_16((Uint32*)dest, screen, VIDEOMODE_actual_width / 2, VIDEOMODE_src_width, VIDEOMODE_src_height, SDL_PALETTE_buffer.bpp16);
+}
+
+static void DisplayProto80(GLvoid *dest)
+{
+	int first_column = (VIDEOMODE_src_offset_left+7) / 8;
+	int last_column = (VIDEOMODE_src_offset_left + VIDEOMODE_src_width) / 8;
+	int first_line = VIDEOMODE_src_offset_top;
+	int last_line = first_line + VIDEOMODE_src_height;
+	if (bpp_32)
+		SDL_VIDEO_BlitProto80_32((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width, first_line, last_line, SDL_PALETTE_buffer.bpp32);
+	else
+		SDL_VIDEO_BlitProto80_16((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width/2, first_line, last_line, SDL_PALETTE_buffer.bpp16);
+}
+
+static void DisplayAF80(GLvoid *dest)
+{
+	int first_column = (VIDEOMODE_src_offset_left+7) / 8;
+	int last_column = (VIDEOMODE_src_offset_left + VIDEOMODE_src_width) / 8;
+	int first_line = VIDEOMODE_src_offset_top;
+	int last_line = first_line + VIDEOMODE_src_height;
+	static int AF80Frame = 0;
+	int blink;
+	AF80Frame++;
+	if (AF80Frame == 60) AF80Frame = 0;
+	blink = AF80Frame >= 30;
+	if (bpp_32)
+		SDL_VIDEO_BlitAF80_32((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width, first_line, last_line, blink, SDL_PALETTE_buffer.bpp32);
+	else
+		SDL_VIDEO_BlitAF80_16((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width/2, first_line, last_line, blink, SDL_PALETTE_buffer.bpp16);
+}
+
+void SDL_VIDEO_GL_DisplayScreen(void)
+{
+	gl.BindTexture(GL_TEXTURE_2D, textures[0]);
+	if (SDL_VIDEO_GL_pbo) {
+		GLvoid *ptr;
+		gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, screen_pbo);
+		ptr = gl.MapBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, GL_WRITE_ONLY_ARB);
+		(*blit_funcs[SDL_VIDEO_current_display_mode])(ptr);
+		gl.UnmapBuffer(GL_PIXEL_UNPACK_BUFFER_ARB);
+		gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VIDEOMODE_actual_width, VIDEOMODE_src_height,
+		                 pixel_formats[SDL_VIDEO_GL_pixel_format].format, pixel_formats[SDL_VIDEO_GL_pixel_format].type,
+		                 NULL);
+		gl.BindBuffer(GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+	} else {
+		(*blit_funcs[SDL_VIDEO_current_display_mode])(screen_texture);
+		gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VIDEOMODE_actual_width, VIDEOMODE_src_height,
+		                 pixel_formats[SDL_VIDEO_GL_pixel_format].format, pixel_formats[SDL_VIDEO_GL_pixel_format].type,
+		                 screen_texture);
+	}
+	gl.CallList(screen_dlist);
+	SDL_GL_SwapBuffers();
+}
+
+int SDL_VIDEO_GL_ReadConfig(char *option, char *parameters)
+{
+	if (strcmp(option, "PIXEL_FORMAT") == 0) {
+		int i = CFG_MatchTextParameter(parameters, pixel_format_cfg_strings, SDL_VIDEO_GL_PIXEL_FORMAT_SIZE);
+		if (i < 0)
+			return FALSE;
+		SDL_VIDEO_GL_pixel_format = i;
+	}
+	else if (strcmp(option, "BILINEAR_FILTERING") == 0)
+		return (SDL_VIDEO_GL_filtering = Util_sscanbool(parameters)) != -1;
+	else if (strcmp(option, "OPENGL_PBO") == 0)
+		return (SDL_VIDEO_GL_pbo = Util_sscanbool(parameters)) != -1;
+	else
+		return FALSE;
+	return TRUE;
+}
+
+void SDL_VIDEO_GL_WriteConfig(FILE *fp)
+{
+	fprintf(fp, "PIXEL_FORMAT=%s\n", pixel_format_cfg_strings[SDL_VIDEO_GL_pixel_format]);
+	fprintf(fp, "BILINEAR_FILTERING=%d\n", SDL_VIDEO_GL_filtering);
+	fprintf(fp, "OPENGL_PBO=%d\n", SDL_VIDEO_GL_pbo);
+}
+
+/* Loads the OpenGL library. Return TRUE on success, FALSE on failure. */
+static int InitGlLibrary(void)
+{
+	if (SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1) != 0) {
+		Log_print("Cannot use OpenGL - unable to set GL attribute: %s\n",SDL_GetError());
+		return FALSE;
+	}
+	if (SDL_GL_LoadLibrary(library_path) < 0) {
+		Log_print("Cannot use OpenGL - unable to dynamically open OpenGL library: %s\n",SDL_GetError());
+		return FALSE;
+	}
+	return TRUE;
+}
+
+void SDL_VIDEO_GL_InitSDL(void)
+{
+	SDL_VIDEO_opengl_available = InitGlLibrary();
 }
 
 int SDL_VIDEO_GL_Initialise(int *argc, char *argv[])
@@ -730,16 +728,25 @@ int SDL_VIDEO_GL_Initialise(int *argc, char *argv[])
 	int help_only = FALSE;
 
 	for (i = j = 1; i < *argc; i++) {
-		int i_a = (i + 1 < *argc);		/* is argument available? */
-		int a_m = FALSE;			/* error, argument missing! */
-		if (strcmp(argv[i], "-bilinear-filter") == 0)
+		int i_a = (i + 1 < *argc); /* is argument available? */
+		int a_m = FALSE;           /* error, argument missing! */
+		int a_i = FALSE;           /* error, argument invalid! */
+
+		if (strcmp(argv[i], "-pixel-format") == 0) {
+			if (i_a) {
+				if ((SDL_VIDEO_GL_pixel_format = CFG_MatchTextParameter(argv[++i], pixel_format_cfg_strings, SDL_VIDEO_GL_PIXEL_FORMAT_SIZE)) < 0)
+					a_i = TRUE;
+			}
+			else a_m = TRUE;
+		}
+		else if (strcmp(argv[i], "-bilinear-filter") == 0)
 			SDL_VIDEO_GL_filtering = TRUE;
 		else if (strcmp(argv[i], "-no-bilinear-filter") == 0)
 			SDL_VIDEO_GL_filtering = FALSE;
-/*		else if (strcmp(argv[i], "-sync-video") == 0)
-			SDL_VIDEO_GL_sync = TRUE;
-		else if (strcmp(argv[i], "-no-sync-video") == 0)
-			SDL_VIDEO_GL_sync = FALSE;*/
+		else if (strcmp(argv[i], "-pbo") == 0)
+			SDL_VIDEO_GL_pbo = TRUE;
+		else if (strcmp(argv[i], "-no-pbo") == 0)
+			SDL_VIDEO_GL_pbo = FALSE;
 		else if (strcmp(argv[i], "-opengl-lib") == 0) {
 			if (i_a)
 				library_path = argv[++i];
@@ -748,16 +755,21 @@ int SDL_VIDEO_GL_Initialise(int *argc, char *argv[])
 		else {
 			if (strcmp(argv[i], "-help") == 0) {
 				help_only = TRUE;
+				Log_print("\t-pixel-format bgr16|rgb16|bgra32|argb32");
+				Log_print("\t                     Set internal pixel format (affects performance)");
 				Log_print("\t-bilitear-filter     Enable OpenGL bilinear filtering");
 				Log_print("\t-no-bilitear-filter  Disable OpenGL bilinear filtering");
-/*				Log_print("\t-sync-video          Synchronize display to vertical blank (OpenGL only)");
-				Log_print("\t-no-sync-video       Don't synchronize display to vertical blank");*/
+				Log_print("\t-pbo                 Use OpenGL Pixel Buffer Objects if available");
+				Log_print("\t-no-pbo              Don't use OpenGL Pixel Buffer Objects");
 				Log_print("\t-opengl-lib <path>   Use a custom OpenGL shared library");
 			}
 			argv[j++] = argv[i];
 		}
 		if (a_m) {
 			Log_print("Missing argument for '%s'", argv[i]);
+			return FALSE;
+		} else if (a_i) {
+			Log_print("Invalid argument for '%s'", argv[--i]);
 			return FALSE;
 		}
 	}
@@ -766,19 +778,40 @@ int SDL_VIDEO_GL_Initialise(int *argc, char *argv[])
 	if (help_only)
 		return TRUE;
 
-	SDL_VIDEO_opengl_available = InitGl();
-	if (SDL_VIDEO_opengl_available)
-		Log_print("OpenGL initialised successfully.");
-	else
-		Log_print("OpenGL not available.");
+	bpp_32 = SDL_VIDEO_GL_pixel_format >= SDL_VIDEO_GL_PIXEL_FORMAT_BGRA32;
 
 	return TRUE;
+}
+
+void SDL_VIDEO_GL_SetPixelFormat(int value)
+{
+	SDL_VIDEO_GL_pixel_format = value;
+	if (SDL_VIDEO_screen != NULL && (SDL_VIDEO_screen->flags & SDL_OPENGL) == SDL_OPENGL) {
+		int new_bpp_32 = value >= SDL_VIDEO_GL_PIXEL_FORMAT_BGRA32;
+		if (new_bpp_32 != bpp_32)
+		{
+			FreeTexture();
+			bpp_32 = new_bpp_32;
+			AllocTexture();
+		}
+		CalcPalette(SDL_VIDEO_current_display_mode);
+		InitGlTextures();
+		CleanDisplayTexture();
+	}
+	else
+		bpp_32 = value;
+
+}
+
+void SDL_VIDEO_GL_TogglePixelFormat(void)
+{
+	SDL_VIDEO_GL_SetPixelFormat((SDL_VIDEO_GL_pixel_format + 1) % SDL_VIDEO_GL_PIXEL_FORMAT_SIZE);
 }
 
 void SDL_VIDEO_GL_SetFiltering(int value)
 {
 	SDL_VIDEO_GL_filtering = value;
-	if (MainScreen != NULL) {
+	if (SDL_VIDEO_screen != NULL && (SDL_VIDEO_screen->flags & SDL_OPENGL) == SDL_OPENGL) {
 		GLint filtering = value ? GL_LINEAR : GL_NEAREST;
 		gl.BindTexture(GL_TEXTURE_2D, textures[0]);
 		gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filtering);
@@ -793,16 +826,42 @@ void SDL_VIDEO_GL_ToggleFiltering(void)
 	SDL_VIDEO_GL_SetFiltering(!SDL_VIDEO_GL_filtering);
 }
 
+int SDL_VIDEO_GL_SetPbo(int value)
+{
+	if (SDL_VIDEO_screen != NULL && (SDL_VIDEO_screen->flags & SDL_OPENGL) == SDL_OPENGL) {
+		/* Return false if PBOs are requested but not available. */
+		if (value && !pbo_available)
+			return FALSE;
+		CleanGlContext();
+		FreeTexture();
+		SDL_VIDEO_GL_pbo = value;
+		InitGlContext();
+		AllocTexture();
+		InitGlTextures();
+		SetGlDisplayList();
+		CleanDisplayTexture();
+	}
+	else
+		SDL_VIDEO_GL_pbo = value;
+	return TRUE;
+}
+
+int SDL_VIDEO_GL_TogglePbo(void)
+{
+	return SDL_VIDEO_GL_SetPbo(!SDL_VIDEO_GL_pbo);
+}
+
 void SDL_VIDEO_GL_ScanlinesPercentageChanged(void)
 {
-	if (MainScreen != NULL) {
+	if (SDL_VIDEO_screen != NULL && (SDL_VIDEO_screen->flags & SDL_OPENGL) == SDL_OPENGL) {
+		SetSubpixelShifts();
 		SetGlDisplayList();
 	}
 }
 
 void SDL_VIDEO_GL_InterpolateScanlinesChanged(void)
 {
-	if (MainScreen != NULL) {
+	if (SDL_VIDEO_screen != NULL && (SDL_VIDEO_screen->flags & SDL_OPENGL) == SDL_OPENGL) {
 		GLint filtering = SDL_VIDEO_interpolate_scanlines ? GL_LINEAR : GL_NEAREST;
 		gl.BindTexture(GL_TEXTURE_2D, textures[1]);
 		gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filtering);
@@ -811,13 +870,3 @@ void SDL_VIDEO_GL_InterpolateScanlinesChanged(void)
 		SetGlDisplayList();
 	}
 }
-
-/*int SDL_VIDEO_GL_SetSync(int value)
-{
-
-}
-
-int SDL_VIDEO_GL_ToggleSync(void)
-{
-	return SDL_VIDEO_GL_SetSync(!SDL_VIDEO_GL_sync);
-}*/

@@ -75,26 +75,21 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 	*argc = j;
 
 	if (!help_only) {
-		i = SDL_INIT_VIDEO | SDL_INIT_JOYSTICK;
+		i = SDL_INIT_JOYSTICK
 #ifdef SOUND
-		i |= SDL_INIT_AUDIO;
+		    | SDL_INIT_AUDIO
 #endif
-#ifdef HAVE_WINDOWS_H
-		/* Windows SDL version 1.2.10+ uses windib as the default, but it is slower.
-		   Additionally on some graphic cards it doesn't work properly in low
-		   resolutions like Atari800's default of 336x240. */
-		if (SDL_getenv("SDL_VIDEODRIVER")==NULL)
-			SDL_putenv("SDL_VIDEODRIVER=directx");
-#endif
+#if HAVE_WINDOWS_H
+/* Timers are used to avoid one Windows 7 glitch, see src/sdl/input.c */
+		    | SDL_INIT_TIMER
+#endif /* HAVE_WINDOWS_H */
+		;
 		if (SDL_Init(i) != 0) {
-			Log_print("SDL_Init FAILED");
-			Log_print(SDL_GetError());
+			Log_print("SDL_Init FAILED: %s", SDL_GetError());
 			Log_flushlog();
 			exit(-1);
 		}
 		atexit(SDL_Quit);
-		/* SDL_WM_SetIcon("/usr/local/atari800/atarixe.ICO"), NULL); */
-		SDL_WM_SetCaption(Atari800_TITLE, "Atari800");
 	}
 
 	if (!SDL_VIDEO_Initialise(argc, argv)
@@ -104,11 +99,6 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 	    || !SDL_INPUT_Initialise(argc, argv))
 		return FALSE;
 
-	if (help_only)
-		return TRUE; /* return before initialising SDL */
-
-	SDL_EnableUNICODE(1);
-
 	return TRUE;
 }
 
@@ -117,9 +107,12 @@ int PLATFORM_Exit(int run_monitor)
 	int restart;
 
 	SDL_INPUT_Exit();
+	/* If the SDL window was left not closed, it would be unusable and hanging
+	   for the time the monitor is active. Also, with SDL_VIDEODRIVER=directx all
+	   keyboard presses in console would be still fetched by the SDL window after
+	   leaving the monitor. To avoid the problems, close the video subsystem. */
+	SDL_VIDEO_Exit();
 	if (run_monitor) {
-		/* disable graphics, set alpha mode */
-		VIDEOMODE_ForceWindowed(TRUE);
 #ifdef SOUND
 		Sound_Pause();
 #endif
@@ -133,13 +126,14 @@ int PLATFORM_Exit(int run_monitor)
 	}
 
 	if (restart) {
-		/* set up graphics and all the stuff */
-		VIDEOMODE_ForceWindowed(FALSE);
+		/* Reinitialise the SDL subsystem. */
+		SDL_VIDEO_InitSDL();
 		SDL_INPUT_Restart();
+		/* This call reopens the SDL window. */
+		VIDEOMODE_Update();
 		return 1;
 	}
 
-	SDL_VIDEO_Exit();
 	SDL_Quit();
 
 	Log_flushlog();
@@ -147,8 +141,38 @@ int PLATFORM_Exit(int run_monitor)
 	return restart;
 }
 
+#if HAVE_WINDOWS_H
+static BOOL CtrlHandler(DWORD fdwCtrlType)
+{
+	switch (fdwCtrlType)
+	{
+	case CTRL_CLOSE_EVENT:
+	case CTRL_BREAK_EVENT:
+	case CTRL_LOGOFF_EVENT:
+	case CTRL_SHUTDOWN_EVENT:
+		/* Perform a normal exit. */
+		Atari800_Exit(FALSE);
+	case CTRL_C_EVENT:
+		/* Ctrl+C is handled in atari.c */
+		return TRUE;
+	default:
+		return FALSE;
+	}
+}
+#endif /* HAVE_WINDOWS_H */
+
 int main(int argc, char **argv)
 {
+#if HAVE_WINDOWS_H
+	/* Handle Windows console signals myself. If not, then closing
+	   the console window would cause emulator crash due to the sound
+	   subsystem being active. */
+	if(!SetConsoleCtrlHandler((PHANDLER_ROUTINE) CtrlHandler, TRUE)) {
+		Log_print("ERROR: Could not set console control handler");
+		return 1;
+	}
+#endif /* HAVE_WINDOWS_H */
+
 	/* initialise Atari800 core */
 	if (!Atari800_Initialise(&argc, argv))
 		return 3;

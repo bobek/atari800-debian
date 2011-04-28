@@ -207,12 +207,7 @@ void PLATFORM_GetJoystickKeyName(int joystick, int direction, char *buffer, int 
 		case 4: key = SDL_GetKeyName((SDLKey)(joystick == 0 ? KBD_TRIG_0 : KBD_TRIG_1));
 			break;
 	}
-#ifdef HAVE_SNPRINTF
 	snprintf(buffer, bufsize, "%11s", key);
-#else
-	sprintf(buffer, "%11s", key);
-#endif
-	buffer[bufsize-1] = '\0';
 }
 
 static void SwapJoysticks(void)
@@ -234,14 +229,40 @@ int PLATFORM_GetRawKey(void)
 	}
 }
 
+static int lastkey = SDLK_UNKNOWN, key_pressed = 0, key_control = 0;
+static int lastuni = 0;
+
+#if HAVE_WINDOWS_H
+/* On Windows 7 rapidly changing the window size invokes a bug in SDL
+   which causes the window to be resized to size 0,0. This hack delays
+   the resize requests a bit to ensure that no two resizes happen within
+   a span of 0.5 second. See also
+   http://www.atariage.com/forums/topic/179912-atari800-220-released/page__view__findpost__p__2258092 */
+enum { USER_EVENT_RESIZE_DELAY };
+static Uint32 ResizeDelayCallback(Uint32 interval, void *param)
+{
+	SDL_Event event;
+	event.user.type = SDL_USEREVENT;
+	event.user.code = USER_EVENT_RESIZE_DELAY;
+	event.user.data1 = NULL;
+	event.user.data2 = NULL;
+	SDL_PushEvent(&event);
+	return 0;
+}
+#endif /* HAVE_WINDOWS_H */
+
 int PLATFORM_Keyboard(void)
 {
-	static int lastkey = SDLK_UNKNOWN, key_pressed = 0, key_control = 0;
-	static int lastuni = 0;
-	static int resize_delay = 0;
-	static int resize_w, resize_h;
 	int shiftctrl = 0;
 	SDL_Event event;
+
+#if HAVE_WINDOWS_H
+	/* Used to delay resize events on Windows 7, see above. */
+	enum { RESIZE_INTERVAL = 500 };
+	static int resize_delayed = FALSE;
+	static int resize_needed = FALSE;
+	static int resize_w, resize_h;
+#endif /* HAVE_WINDOWS_H */
 
 	/* Very ugly fix for SDL CAPSLOCK brokenness.  This will let the user
 	 * press CAPSLOCK and get a brief keypress on the Atari but it is not
@@ -251,19 +272,6 @@ int PLATFORM_Keyboard(void)
 		lastkey = SDLK_UNKNOWN;
 	   	key_pressed = 0;
  		lastuni = 0;
-	}
-
-	/* A hack to make window resizing work a little better.
-	   When a window is resized, SDL_SetVideoMode should be called, with width
-	   and height as given in the SDL_VIDEORESIZE event. In Atari800 width
-	   and height in SDL_SetVideoMode are adjusted and no longer equal the values
-	   that come in the resize event; this is a bad thing which causes glitches
-	   under MS Windows, such like SDL window hanging up or inability to resize
-	   the window again. By introducing a slight delay between a resize event and
-	   the resize action, the glitches no longer happen. */
-	if (resize_delay > 0) {
-		if (--resize_delay == 0)
-			VIDEOMODE_SetWindowSize(resize_w, resize_h);
 	}
 
 	if (SDL_PollEvent(&event)) {
@@ -285,9 +293,24 @@ int PLATFORM_Keyboard(void)
 			}
 			break;
 		case SDL_VIDEORESIZE:
-			resize_w = event.resize.w;
-			resize_h = event.resize.h;
-			resize_delay = 10;
+#if HAVE_WINDOWS_H
+			/* Delay resize events on Windows 7, see above. */
+			if (resize_delayed) {
+				resize_w = event.resize.w;
+				resize_h = event.resize.h;
+				resize_needed = TRUE;
+			} else {
+				VIDEOMODE_SetWindowSize(event.resize.w, event.resize.h);
+				resize_delayed = TRUE;
+				if (SDL_AddTimer(RESIZE_INTERVAL, &ResizeDelayCallback, NULL) == NULL) {
+					Log_print("Error: SDL_AddTimer failed: %s", SDL_GetError());
+					Log_flushlog();
+					exit(-1);
+				}
+			}
+#else
+			VIDEOMODE_SetWindowSize(event.resize.w, event.resize.h);
+#endif /* HAVE_WINDOWS_H */
 			break;
 		case SDL_VIDEOEXPOSE:
 			/* When window is "uncovered", and we are in the emulator's menu,
@@ -297,6 +320,30 @@ int PLATFORM_Keyboard(void)
 		case SDL_QUIT:
 			return AKEY_EXIT;
 			break;
+#if HAVE_WINDOWS_H
+		case SDL_USEREVENT:
+			/* Process delayed video resize on Windows 7, see above. */
+			if (event.user.code == USER_EVENT_RESIZE_DELAY) {
+				if (resize_needed) {
+					SDL_Event events[1];
+					resize_needed = FALSE;
+					/* If there's a resize event in the queue,
+					   wait for it and don't resize now. */
+					if (SDL_PeepEvents(events, 1, SDL_PEEKEVENT, SDL_EVENTMASK(SDL_VIDEORESIZE)) != 0)
+						resize_delayed = FALSE;
+					else {
+						VIDEOMODE_SetWindowSize(resize_w, resize_h);
+						if (SDL_AddTimer(RESIZE_INTERVAL, &ResizeDelayCallback, NULL) == NULL) {
+							Log_print("Error: SDL_AddTimer failed: %s", SDL_GetError());
+							Log_flushlog();
+							exit(-1);
+						}
+					}
+				} else
+					resize_delayed = FALSE;
+			}
+			break;
+#endif /* HAVE_WINDOWS_H */
 		}
 	}
 	else if (!key_pressed)
@@ -522,10 +569,6 @@ int PLATFORM_Keyboard(void)
 			break;
 			}
 		}
-		if (UI_alt_function != -1) {
-			key_pressed = 0;
-			return AKEY_UI;
-		}
 	}
 
 	/* SHIFT STATE */
@@ -567,8 +610,8 @@ int PLATFORM_Keyboard(void)
 		key_pressed = 0;
 		return INPUT_key_shift ? AKEY_COLDSTART : AKEY_WARMSTART;
 	case SDLK_F8:
-		key_pressed = 0;
-		return (PLATFORM_Exit(1) ? AKEY_NONE : AKEY_EXIT);
+		UI_alt_function = UI_MENU_MONITOR;
+		break;
 	case SDLK_F9:
 		return AKEY_EXIT;
 	case SDLK_F10:
@@ -577,6 +620,11 @@ int PLATFORM_Keyboard(void)
 	case SDLK_F12:
 		key_pressed = 0;
 		return AKEY_TURBO;
+	}
+
+	if (UI_alt_function != -1) {
+		key_pressed = 0;
+		return AKEY_UI;
 	}
 
 	/* keyboard joysticks: don't pass the keypresses to emulation
@@ -686,6 +734,33 @@ int PLATFORM_Keyboard(void)
 		/* Windows takes ctrl+esc and ctrl+shift+esc */
 		return AKEY_ESCAPE ^ shiftctrl;
 	case SDLK_TAB:
+#if HAVE_WINDOWS_H
+		/* On Windows, when an SDL window has focus and LAlt+Tab is pressed,
+		   a window-switching menu appears, but the LAlt+Tab key sequence is
+		   still forwarded to the SDL window. In the effect the user cannot
+		   switch with LAlt+Tab without the emulator registering unwanted key
+		   presses. On other operating systems (e.g. GNU/Linux/KDE) everything
+		   is OK, the key sequence is not registered by the emulator. This
+		   hack fixes the behaviour on Windows. */
+		if (kbhits[SDLK_LALT]) {
+			key_pressed = 0;
+			/* 1. In fullscreen software (non-OpenGL) mode, user presses LAlt, then presses Tab.
+			      Atari800 window gets minimised and the window-switching menu appears.
+			   2. User switches back to Atari800 without releasing LAlt.
+			   3. User releases LAlt. Atari800 gets switched back to fullscreen.
+			   In the above situation, the emulator would register pressing of LAlt but
+			   would not register releasing of the key. It would think that LAlt is still
+			   pressed. The hack below fixes the issue by causing SDL to assume LAlt is
+			   not pressed. */
+#if HAVE_OPENGL
+			if (!VIDEOMODE_windowed && !SDL_VIDEO_opengl)
+#else
+			if (!VIDEOMODE_windowed)
+#endif /* HAVE_OPENGL */
+				kbhits[SDLK_LALT] = 0;
+			return AKEY_NONE;
+		}
+#endif /* HAVE_WINDOWS_H */
 		return AKEY_TAB ^ shiftctrl;
 	case SDLK_DELETE:
 		if (INPUT_key_shift)
@@ -1057,7 +1132,6 @@ static void Init_SDL_Joysticks(int first, int second)
 		else {
 			Log_print("joystick 0 found!");
 			joystick0_nbuttons = SDL_JoystickNumButtons(joystick0);
-			swap_joysticks = 1;
 		}
 	}
 
@@ -1162,6 +1236,8 @@ void SDL_INPUT_Exit(void)
 
 void SDL_INPUT_Restart(void)
 {
+	lastkey = SDLK_UNKNOWN;
+	key_pressed = key_control = lastuni = 0;
 	if(grab_mouse) SDL_WM_GrabInput(SDL_GRAB_ON);
 }
 
@@ -1252,39 +1328,23 @@ static void get_platform_PORT(Uint8 *s0, Uint8 *s1)
 
 	if (PLATFORM_kbd_joy_0_enabled) {
 		if (kbhits[KBD_STICK_0_LEFT])
-			stick0 = INPUT_STICK_LEFT;
+			stick0 &= INPUT_STICK_LEFT;
 		if (kbhits[KBD_STICK_0_RIGHT])
-			stick0 = INPUT_STICK_RIGHT;
+			stick0 &= INPUT_STICK_RIGHT;
 		if (kbhits[KBD_STICK_0_UP])
-			stick0 = INPUT_STICK_FORWARD;
+			stick0 &= INPUT_STICK_FORWARD;
 		if (kbhits[KBD_STICK_0_DOWN])
-			stick0 = INPUT_STICK_BACK;
-		if ((kbhits[KBD_STICK_0_LEFT]) && (kbhits[KBD_STICK_0_UP]))
-			stick0 = INPUT_STICK_UL;
-		if ((kbhits[KBD_STICK_0_LEFT]) && (kbhits[KBD_STICK_0_DOWN]))
-			stick0 = INPUT_STICK_LL;
-		if ((kbhits[KBD_STICK_0_RIGHT]) && (kbhits[KBD_STICK_0_UP]))
-			stick0 = INPUT_STICK_UR;
-		if ((kbhits[KBD_STICK_0_RIGHT]) && (kbhits[KBD_STICK_0_DOWN]))
-			stick0 = INPUT_STICK_LR;
+			stick0 &= INPUT_STICK_BACK;
 	}
 	if (PLATFORM_kbd_joy_1_enabled) {
 		if (kbhits[KBD_STICK_1_LEFT])
-			stick1 = INPUT_STICK_LEFT;
+			stick1 &= INPUT_STICK_LEFT;
 		if (kbhits[KBD_STICK_1_RIGHT])
-			stick1 = INPUT_STICK_RIGHT;
+			stick1 &= INPUT_STICK_RIGHT;
 		if (kbhits[KBD_STICK_1_UP])
-			stick1 = INPUT_STICK_FORWARD;
+			stick1 &= INPUT_STICK_FORWARD;
 		if (kbhits[KBD_STICK_1_DOWN])
-			stick1 = INPUT_STICK_BACK;
-		if ((kbhits[KBD_STICK_1_LEFT]) && (kbhits[KBD_STICK_1_UP]))
-			stick1 = INPUT_STICK_UL;
-		if ((kbhits[KBD_STICK_1_LEFT]) && (kbhits[KBD_STICK_1_DOWN]))
-			stick1 = INPUT_STICK_LL;
-		if ((kbhits[KBD_STICK_1_RIGHT]) && (kbhits[KBD_STICK_1_UP]))
-			stick1 = INPUT_STICK_UR;
-		if ((kbhits[KBD_STICK_1_RIGHT]) && (kbhits[KBD_STICK_1_DOWN]))
-			stick1 = INPUT_STICK_LR;
+			stick1 &= INPUT_STICK_BACK;
 	}
 
 	if (swap_joysticks) {
@@ -1302,14 +1362,14 @@ static void get_platform_PORT(Uint8 *s0, Uint8 *s1)
 	}
 
 	if (fd_joystick0 != -1)
-		*s0 = get_LPT_joystick_state(fd_joystick0);
+		*s0 &= get_LPT_joystick_state(fd_joystick0);
 	else if (joystick0 != NULL)
-		*s0 = get_SDL_joystick_state(joystick0);
+		*s0 &= get_SDL_joystick_state(joystick0);
 
 	if (fd_joystick1 != -1)
-		*s1 = get_LPT_joystick_state(fd_joystick1);
+		*s1 &= get_LPT_joystick_state(fd_joystick1);
 	else if (joystick1 != NULL)
-		*s1 = get_SDL_joystick_state(joystick1);
+		*s1 &= get_SDL_joystick_state(joystick1);
 }
 
 static void get_platform_TRIG(Uint8 *t0, Uint8 *t1)
@@ -1318,11 +1378,11 @@ static void get_platform_TRIG(Uint8 *t0, Uint8 *t1)
 	trig0 = trig1 = 1;
 
 	if (PLATFORM_kbd_joy_0_enabled) {
-		trig0 = kbhits[KBD_TRIG_0] ? 0 : 1;
+		trig0 = !kbhits[KBD_TRIG_0];
 	}
 
 	if (PLATFORM_kbd_joy_1_enabled) {
-		trig1 = kbhits[KBD_TRIG_1] ? 0 : 1;
+		trig1 = !kbhits[KBD_TRIG_1];
 	}
 
 	if (swap_joysticks) {
@@ -1338,10 +1398,7 @@ static void get_platform_TRIG(Uint8 *t0, Uint8 *t1)
 #ifdef LPTJOY
 		int status;
 		ioctl(fd_joystick0, LPGETSTATUS, &status);
-		if (status & 8)
-			*t0 = 1;
-		else
-			*t0 = 0;
+		*t0 &= ((status & 8) > 0);
 #endif /* LPTJOY */
 	}
 	else if (joystick0 != NULL) {
@@ -1352,17 +1409,14 @@ static void get_platform_TRIG(Uint8 *t0, Uint8 *t1)
 				break;
 			}
 		}
-		*t0 = trig0;
+		*t0 &= trig0;
 	}
 
 	if (fd_joystick1 != -1) {
 #ifdef LPTJOY
 		int status;
 		ioctl(fd_joystick1, LPGETSTATUS, &status);
-		if (status & 8)
-			*t1 = 1;
-		else
-			*t1 = 0;
+		*t1 &= ((status & 8) > 0);
 #endif /* LPTJOY */
 	}
 	else if (joystick1 != NULL) {
@@ -1373,7 +1427,7 @@ static void get_platform_TRIG(Uint8 *t0, Uint8 *t1)
 				break;
 			}
 		}
-		*t1 = trig1;
+		*t1 &= trig1;
 	}
 }
 

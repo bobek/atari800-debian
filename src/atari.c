@@ -166,17 +166,14 @@ static double Atari_time(void);
 int emuos_mode = 1;	/* 0 = never use EmuOS, 1 = use EmuOS if real OS not available, 2 = always use EmuOS */
 
 #ifdef HAVE_SIGNAL
+volatile sig_atomic_t sigint_flag = FALSE;
+
 static RETSIGTYPE sigint_handler(int num)
 {
-	int restart;
-
-	restart = Atari800_Exit(TRUE);
-	if (restart) {
-		signal(SIGINT, sigint_handler);
-		return;
-	}
-
-	exit(0);
+	sigint_flag = TRUE;
+	/* Avoid restoring the original signal handler. */
+	signal(SIGINT, sigint_handler);
+	return;
 }
 #endif
 
@@ -706,15 +703,15 @@ int Atari800_Initialise(int *argc, char *argv[])
 #ifdef NTSC_FILTER
 		|| !FILTER_NTSC_Initialise(argc, argv)
 #endif
+#if SUPPORTS_CHANGE_VIDEOMODE
+		|| !VIDEOMODE_Initialise(argc, argv)
+#endif
 #ifndef DONT_DISPLAY
 		/* Platform Specific Initialisation */
 		|| !PLATFORM_Initialise(argc, argv)
 #endif
 #if !defined(BASIC) && !defined(CURSES_BASIC)
 		|| !Screen_Initialise(argc, argv)
-#endif
-#if SUPPORTS_CHANGE_VIDEOMODE
-		|| !VIDEOMODE_Initialise(argc, argv)
 #endif
 		/* Initialise Custom Chips */
 		|| !ANTIC_Initialise(argc, argv)
@@ -926,6 +923,10 @@ int Atari800_Exit(int run_monitor)
 	}
 #endif /* STAT_UNALIGNED_WORDS */
 	restart = PLATFORM_Exit(run_monitor);
+#ifdef HAVE_SIGNAL
+	/* If a user pressed Ctrl+C in the monitor, avoid immediate return to it. */
+	sigint_flag = FALSE;
+#endif /* HAVE_SIGNAL */
 #ifndef __PLUS
 	if (!restart) {
 		SIO_Exit();	/* umount disks, so temporary files are deleted */
@@ -1247,6 +1248,15 @@ void Atari800_Frame(void)
 {
 #ifndef BASIC
 	static int refresh_counter = 0;
+
+#ifdef HAVE_SIGNAL
+	if (sigint_flag) {
+		sigint_flag = FALSE;
+		INPUT_key_code = AKEY_UI;
+		UI_alt_function = UI_MENU_MONITOR;
+	}
+#endif /* HAVE_SIGNAL */
+
 	switch (INPUT_key_code) {
 	case AKEY_COLDSTART:
 		Atari800_Coldstart();
