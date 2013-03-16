@@ -1,3 +1,9 @@
+atari800 (3.0.0-1) UNRELEASED; urgency=low
+
+  * New upstream release
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Sat, 16 Mar 2013 13:02:47 +0100
+
 atari800 (2.2.1-2) unstable; urgency=low
 
   * depend on libpng-dev not libpng12-dev (Closes: #662272)
