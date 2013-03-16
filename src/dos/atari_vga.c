@@ -685,7 +685,8 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 
 #ifdef SOUND
         /* initialise sound routines */
-        Sound_Initialise(argc, argv);
+        if (!Sound_Initialise(argc, argv))
+        	return FALSE;
 #endif
 
         if (help_only)
@@ -1240,7 +1241,13 @@ int PLATFORM_Keyboard(void)
 	                keycode |= AKEY_r;
                 break;
         case 0x14:
-                keycode |= AKEY_t;
+				if (alt_key)
+				{
+					keycode = AKEY_UI;
+					UI_alt_function = UI_MENU_CASSETTE;			/* ALT+T .. Tape management */
+				}
+				else
+					keycode |= AKEY_t;
                 break;
         case 0x15:
 				if (alt_key)

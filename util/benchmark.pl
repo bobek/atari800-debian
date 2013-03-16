@@ -118,8 +118,8 @@ else {
 
 # supported targets
 my @targets = qw(
-	basic curses ncurses pdcurses dosvga falcon sdl windx
-	x11 x11-motif x11-shm x11-xview x11-xview-shm motif shm xview xview-shm
+	default falcon windx x11 x11-motif x11-shm
+	x11-xview x11-xview-shm motif shm xview xview-shm
 );
 
 my $help_me = 0;
@@ -135,9 +135,6 @@ for (@ARGV) {
 	}
 	elsif (/^--cflags=(.+)/) {
 		$cflags = $1;
-	}
-	elsif (/^--(?:en|dis)able-/) {
-		push @features, $_;
 	}
 	elsif (/^--program=(.+)/) {
 		$reference_program = $1;
@@ -157,14 +154,14 @@ for (@ARGV) {
 		$help_me = 1;
 	}
 	else {
-		die "Unknown option: $_\n";
+		push @features, $_;
 	}
 }
 
-# gfx-generating target: dosvga for DJGPP, windx on Win32, sdl otherwise
-my $gfx_target = 'sdl';
-if ($^O =~ /win|dos/i) {
-	$gfx_target = `gcc -dumpmachine` =~ /djgpp/i ? 'dosvga' : 'windx';
+# gfx-generating target: windx on Win32, default otherwise
+my $gfx_target = 'default';
+if ($^O =~ /win/i) {
+	$gfx_target = 'windx';
 }
 
 # must initialize this after parsing the command line
@@ -176,16 +173,16 @@ my %tests = (
 		'run' => [ $reference_program, 'blank.xex' ]
 	},
 	'basic' => {
-		'target' => 'basic',
+		'target' => 'default',
 		'run' => [ $reference_program, 'blank.xex' ]
 	},
 	'monitorbreak' => {
-		'target' => 'basic',
+		'target' => 'default',
 		'config' => [ '--disable-monitorbreak', '--enable-monitorbreak' ],
 		'run' => [ $reference_program ],
 	},
 	'pagedattrib' => {
-		'target' => 'basic',
+		'target' => 'default',
 		'config' => [ '--disable-pagedattrib', '--enable-pagedattrib' ],
 		'run' => [ $reference_program, 'ramread.xex', 'ramstore.xex', 'hwread.xex', 'hwstore.xex' ],
 	},
@@ -211,12 +208,12 @@ Available options:
 --test=<test>         Choose test (required)
 --target=<target>     Choose Atari800 target for the test
 --cflags="<cflags>"   Override CFLAGS (default: "-O2 -Wall" + test-specific)
---enable-<feature>    Enable Atari800 feature via "configure"
---disable-<feature>   Disable Atari800 feature via "configure"
 --program=<filename>  Choose Atari program to be run (defaults to $reference_program)
 --frames=<frames>     Set number of frames to be run (defaults to $frames)
 --output=<filename>   Output the results to the specified file
 --generate-programs   Just generate all the built-in Atari programs
+Any other options are passed to the configure script. Use it to affect the set
+of optional features and external libraries used during the test. 
 
 Available tests:
   default       Compare chosen Atari program with one that does nothing,
@@ -224,19 +221,19 @@ Available tests:
                 with "--enable-<feature>", "--disable-<feature>")
                 (default target: $gfx_target)
   basic         Compare chosen Atari program with one that does nothing
-                (default target: basic)
+                (default target: default)
   monitorbreak  Compare configurations with/without MONITOR_BREAK
-                (default target: basic)
+                (default target: default)
   pagedattrib   Compare configurations with/without PAGED_ATTRIB
-                (default target: basic)
+                (default target: default)
   cycleexact    Compare configurations with/without NEW_CYCLE_EXACT
                 (default target: $gfx_target)
   display       Compare display performance with different Atari programs
                 (default target: $gfx_target)
 
 Available Atari800 targets:
-  @targets[0..8]
-  @targets[9..17]
+  @targets[0..5]
+  @targets[6..11]
 
 EOF
 	exit;
@@ -324,8 +321,8 @@ my @configs = $test_settings->{'config'} ? @{$test_settings->{'config'}} : ('');
 for my $config (@configs) {
 	print '-' x 76, "\n";
 	# "@{[]}" trick in this print is to avoid two consecutive spaces when @features is empty
-	print OUT "./configure --target=$target --disable-sound @{[@features, $config]}\n";
-	run_command('sh', './configure', "--target=$target", '--disable-sound', @features, split(' ', $config));
+	print OUT "./configure --target=$target --without-sound @{[@features, $config]}\n";
+	run_command('sh', './configure', "--target=$target", '--without-sound', @features, split(' ', $config));
 	run_command('make', 'clean');
 	run_command('make');
 	# run each program

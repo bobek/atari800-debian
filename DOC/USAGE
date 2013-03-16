@@ -17,13 +17,53 @@ to the drive 1, next one to the drive 2, etc.
 
 Cassette operation
 ==================
+There is support for loading and saving from/to CAS tape images. It is also
+possible to select raw files (DOS binaries, bootable programs, BASIC programs
+etc.) as tape images, but only for loading. Upon attaching a tape image, the
+emulator acts as if the tape recorder's "Play" button was permanently pressed,
+so that a tape rolls automatically when an Atari program turns the tape motor
+on.
 
-As there is no possibility to create a new tape from the UI yet, create a file
-of zero size (e.g. with 'touch' command or a text editor) and Select that
-as tape if you want to save to tape.
-Appending to existing tapes is not allowed. You have to re-insert (select
-again in the tape dialog) a just saved tape when you want to load from it
-in order to rewind it.
+Turning the SIO patch on speeds up the tape load and save operations. Note
+that toggling the SIO patch during any tape operation will cause it to fail.
+
+A tape image can be rewound to a specific part (block), to allow loading
+from tape images which contain multiple programs one-after-another. After
+rewinding the "Record" option is automatically turned off. Rewinding will
+cause any tape operation being in progress to fail.
+
+When a tape image is attached to Atari800, only loading from it is possible.
+Before saving data on the tape, a user has to manually switch the "Record"
+option to "yes", in the same way as one would manually press/release the
+"Record" button on a physical tape recorder. Remember to disable the "Record"
+option before loading from tape. Note that switching the "Record" option
+on/off during any tape operation will cause it to fail and may cause random
+data to be saved to a tape image.
+
+With the SIO patch active, the emulator automatically recognises whether
+a load or save operation is requested. and it is not necessary to touch the
+"Record" option. This can lead to unwanted changes in a tape file. To avoid
+the problem, a user can mark the attached cassette image as read-only to
+disallow any write operations.
+
+Saving to tape always casues the new blocks to be appended at the end of the
+tape image, regardless of the tape's current position. It is not possible
+to overwrite existing data on the tape.
+
+A user can create a new empty CAS tape image with the "Make blank tape"
+option. The user then provides the image's filename and its description
+(stored in the CAS image's header; may be left empty). The created image is
+automatically attached to Atari800 with the "Record" option turned on, which
+allows to go straight to saving the data. Creating an image with the filename
+pointing to an existing file will cause that file to be cleared.
+
+Only standard blocks can be loaded or saved. Any copy protection that relies
+on non-standard signals is not supported. Additionally, saving is only
+supported with the standard speed of 600 baud.
+
+Saving the emulator's state during a tape loading/saving is not supported. The
+current tape operation is not stored in the savestate and it will not be
+restored properly when that savestate is later loaded.
 
 MIO and Black Box
 ==================
@@ -54,27 +94,46 @@ Command line options
 -verbose              Display framerate when exiting
 
 -config <filename>    Use specified configuration file instead of default
+-autosave-config      Automatically save the current configuration on emulator
+                      exit
+-no-autosave-config   Don't save the current configuration on emulator exit
+                      (the default)
+
 -osa_rom <filename>   Use specified OS/A ROM image
 -osb_rom <filename>   Use specified OS/B ROM image
 -xlxe_rom <filename>  Use specified XL/XE OS ROM image
 -5200_rom <filename>  Use specified 5200 OS ROM image
 -basic_rom <filename> Use specified Atari BASIC ROM image
 
+-800-rev auto|a-ntsc|a-pal|b-ntsc|custom
+                      Select OS revision for Atari 400/800
+-xl-rev auto|10|11|1|2|3a|3b|5|3|4|59|59a|custom
+                      Select OS revision for Atari XL/XE
+-5200-rev auto|orig|a|custom
+                      Select OS revision for Atari 5200
+-basic-rev auto|a|b|c|custom
+                      Select BASIC revision
+-xegame-rev auto|orig|custom
+                      Select XEGS builtin game version
+
 -atari                Emulate Atari 800
--xl                   Emulate Atari 800 XL
--xe                   Emulate Atari 130 XE
--320xe                Emulate Atari 320 XE (Compy Shop)
--rambo                Emulate Atari 320 XE (Rambo)
+-1200                 Emulate Atari 1200XL
+-xl                   Emulate Atari 800XL
+-xe                   Emulate Atari 130XE
+-320xe                Emulate Atari 320XE (Compy Shop)
+-rambo                Emulate Atari 320XE (Rambo)
+-xegs                 Emulate Atari XEGS
 -5200                 Emulate Atari 5200
 
 -emuos                Use EmuOS
--a                    Use OS/A for Atari 800
--b                    Use OS/B for Atari 800
 -c                    Enable RAM between 0xc000 and 0xcfff in Atari 800
 
 -axlon <n>            Use Atari 800 Axlon memory expansion: <n> k total RAM
 -axlon0f              Use Axlon shadow at 0x0fc0-0x0fff
 -mosaic <n>           Use 400/800 Mosaic memory expansion: <n> k total RAM
+-mapram               Enable MapRAM enhancement for Atari XL/XE
+-no-mapram            Disable MapRAM
+
 
 -pal                  Emulate PAL TV mode
 -ntsc                 Emulate NTSC TV mode
@@ -83,8 +142,16 @@ Command line options
 -basic                Turn on Atari BASIC ROM
 
 -cart <filename>      Insert cartridge (CART or raw format)
+-cart-type <0..59>    Select type of cartridge inserted with -cart. 0 means
+                      no cartridge, and other values indicate a specific
+                      cartridge type as in cart.txt.
 -cart2 <filename>     Insert second cartridge (CART or raw format)
-                        Only if first cartridge is SpartaDOS X (64 or 128)
+                      Only if first cartridge is SpartaDOS X (64 or 128)
+-cart2-type <0..59>   Similar to -cart-type. Select type of cartridge inserted
+                      with -cart2.
+-cart-autoreboot      Automatically reboot after cartridge inserting/removing
+                      (doesn't affect the piggyback cartridge)
+-no-cart-autoreboot   Don't reboot after cartridge inserting/removing
 
 -run <filename>       Run Atari program (EXE, COM, XEX, BAS, LST)
 
@@ -92,6 +159,7 @@ Command line options
 
 -tape <filename>      Attach cassette image (CAS format or raw file)
 -boottape <filename>  Attach cassette image and boot it
+-tape-readonly        Set the attached cassette image as read-only
 
 -1400                 Emulate the Atari 1400XL
 -xld                  Emulate the Atari 1450XLD
@@ -145,17 +213,20 @@ Command line options
 -contrast <n>         Set screen contrast (also called white level)
 -brightness <n>       Set screen brightness (also called black level)
 -gamma <n>            Set screen gamma correction
+-tint <n>             Set tint -1..1
 -ntsc-saturation <n>  Set saturation only for NTSC
 -ntsc-contrast <n>    Set contrast only for NTSC
 -ntsc-brightness <n>  Set brightness only for NTSC
 -ntsc-gamma <n>       Set gamma adjustment only for NTSC
--hue <n>              Set hue -1..1 (like TV Tint control, NTSC only)
--colordelay <n>       Set GTIA color delay (emulates the potentiometer at the
-                      bottom of Atari computers, that adjusts colors; NTSC only)
+-ntsc-tint <n>        Set tint only for NTSC
+-ntsc-colordelay <n>  Set GTIA color delay for NTSC (emulates the potentiometer at the
+                      bottom of Atari computers, that adjusts colors)
 -pal-saturation <n>   Set saturation only for PAL
 -pal-contrast <n>     Set contrast only for PAL
 -pal-brightness <n>   Set brightness only for PAL
 -pal-gamma <n>        Set gamma adjustment only for PAL
+-pal-tint <n>         Set tint only for PAL
+-pal-colordelay <n>   Set GTIA color delay for PAL
 
 -paletten <filename>  Read Atari NTSC colors from ACT file
 -paletten-adjust      Apply the colour adjustments to the loaded NTSC palette
@@ -245,10 +316,10 @@ SDL version options
                       short: 200 pixels,
                       tv: similar to real tv - 224 or 240 pixels (depending on
                       TV system),
-                      full: full overscan - 275 pixels,
-                      or provide a number between 100 and 275.
+                      full: full overscan - 300 pixels,
+                      or provide a number between 100 and 300.
 -horiz-shift <n>      Set horizontal shift of the visible area (-384..384)
--vert-shift <n>       Set vertical shift of the visible area (-275..275)
+-vert-shift <n>       Set vertical shift of the visible area (-300..300)
 -stretch none|integral|full|<number>
                       Set method for image stretching:
                       none: no stretching at all,
@@ -353,6 +424,7 @@ F12                  Turbo mode
 Alt+R                Run Atari program
 Alt+D                Disk management
 Alt+C                Cartridge management
+Alt+T                Tape management
 Alt+Y                Select system
 Alt+O                Sound settings
 Alt+W                Sound recording start/stop
@@ -469,8 +541,8 @@ LAlt+G     Switch visible horizontal area. See -horiz-area.
 LAlt+J     Swap joysticks 0 and 1
 LAlt+M     Grab mouse (prevents mouse pointer from leaving the window)
 
-LAlt+LShift+1     Decrease hue (like TV Tint control, only NTSC)
-LAlt+1            Increase hue
+LAlt+LShift+1     Decrease tint (also called hue)
+LAlt+1            Increase tint
 LAlt+LShift+2     Decrease saturation (like TV Colour control)
 LAlt+2            Increase saturation
 LAlt+LShift+3     Decrease contrast (also called white level)
@@ -479,7 +551,7 @@ LAlt+LShift+4     Decrease brightness (also called black level)
 LAlt+4            Increase brightness
 LAlt+LShift+5     Decrease gamma adjustment
 LAlt+5            Increase gamma adjustment
-LAlt+LShift+6     Decrease color delay (Atari color adjustment potentiometer, only NTSC)
+LAlt+LShift+6     Decrease color delay (Atari color adjustment potentiometer)
 LAlt+6            Increase color delay
 
 The following keys work only in the NTSC filter mode (-ntscemu):

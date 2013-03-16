@@ -1,3 +1,746 @@
+** 3.0.0 released on 2013-03-03
+
+2013-03-03  Petr Stehlik <pstehlik@sophics.cz>
+* DOC/ChangeLog, DOC/NEWS: updated for new release
+
+* README.1ST, atari800.spec, DOC/README, atari.h, atari800.man, configure.ac,
+  util/export: version++
+
+* emuos.c, emuos.lis: extended copyleft
+
+* debian/{chaneglog, control, rules}: updates from the official Debian
+  package merged with updates for a new release
+
+
+2013-02-09  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* DOC/INSTALL, DOC/PORTING, DOC/README: Rename the "basic" version to "simple"
+  in the docs, to avoid confusion with the Atari BASIC and with the "basic"
+  target - there's no such target anymore.
+
+* debian/control, DOC/INSTALL, DOC/INSTALL.dos, DOC/INSTALL.falcon,
+  DOC/README, DOC/readme.html.in, src/atari800.man, atari800.spec, README.1ST:
+  Update docs to inlcude the 1200XL and the XEGS as emulated systems.
+
+* DOC/INSTALL.falcon: Update after renaming --disable-sound to --without-sound.
+
+* DOC/README, DOC/NEWS: Updated with all my contributions since 2.2.1.
+
+
+2013-01-28  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* src/autogen.sh, src/configure.ac, src/configure_dos.bat:
+  Rename the "basic" target to "default" and make it the default - the
+  "--target" configure option can be omitted. Renamed the "--with-gui"
+  configure option to "--with-video".
+
+* util/benchmark.pl:
+  Update to reflect the above changes. Allow passing --with-* options to
+  configure.
+
+* atari800.spec:
+  Update to reflect the above changes. Allow building multiple binaries, each
+  with a different set of configure options.
+
+* DOC/README, DOC/INSTALL, DOC/PORTING, debian/rules:
+  Update to reflect the above changes.
+
+
+2012-10-11  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* devices.c: Fix the H: read function to return status $03 if the next read
+  operation would yield EOF. This complies with Atari DOS behaviour and fixes
+  Turbo BASIC's BLOAD.
+
+* atari.c, cfg.c, memory.[ch], ui.c, atari800.man, DOC/CREDITS, DOC/README,
+  DOC/USAGE: Patch by Jerzy Kut <mono@atari.pl> with additional fixes. Adds
+  support for the MapRAM memory enhancement for XL/XE systems.
+
+* sdl/video_gl.c: Patch by Jerzy Kut <mono@atari.pl>. Spelling fix.
+
+
+2012-09-09  Kostas Nakos  <knakos@gmail.com>
+* android/*: More UI fine tuning, new dialog for cartridge type selection
+* afile.c, cartridge.[ch], ui.c: Moved cartridge types' descriptive text to
+  a more central (reusable) location, hooked android port when a cartridge
+  type cannot be detected.
+
+
+2012-09-08  Kostas Nakos  <knakos@gmail.com>
+* android/*: UI fine tuning, soft keyboard fix for jelly bean
+
+
+2012-09-05  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* android/jni/jni.c: Fix ROM selection hack to support the well-known OSB NTSC
+  ROM bundled with XFormer. That ROM is hacked and therefore it is not
+  recognised as SYSROM_B_NTSC, but as SYSROM_800_CUSTOM.
+
+
+2012-09-04  Kostas Nakos  <knakos@gmail.com>
+* android/*: Natively support UI on post-Honeycomb devices
+
+
+2011-08-27  James Wilkinson  <james@slor.net>
+* config.guess: Detect Haiku as x86 BeOS.
+
+
+2012-08-05  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* sysrom.c: Fixed CRC32 of the CC01r4 OS ROM - the previous one was for a
+  binary that I've myself incorrectly-assembled from sources.
+
+
+2012-07-29  Kostas Nakos  <knakos@gmail.com>
+* android/*: Update project to newer android sdk (jelly bean - 4.1),
+             Fine tuning of the B: device handling,
+             Fix audio stuttering on jelly bean,
+             Fix keymap preference crash on jelly bean,
+             Fix keyboard mapping dialog on jelly bean
+
+
+2012-07-21  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* DOC/CREDITS: Fix alphabetical order. Update my own contributions.
+
+
+2012-06-02  Kostas Nakos  <knakos@gmail.com>
+* android/*: Small tweaks to the touchscreen mode
+* afile.c, cartridge.c: Temporary fix for non auto-detected cartridges, until
+  the implementation of a proper menu
+
+
+2012-05-20  Kostas Nakos  <knakos@gmail.com>
+* android/*: Implement Planetary Defense mode, a Koala Pad click-where-I-point
+  mode
+* devices.[ch], esc.h, android/*: Implement the B: device in the core and
+  android port
+
+
+2012-05-19  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cartridge.[ch], ui.c, atari800.man, DOC/cart.txt, DOC/USAGE: Support for
+  2 KB and 4 KB ROMs used in early Atari cartridges.
+
+* configure.ac, platform.h, atari.c, ui_basic.c, ui.[ch], sdl/init.[ch],
+  sdl/main.c, sdl/sound.c, debian/rules, util/benchmark.pl, DOC/INSTALL: Merge
+  basic and sdl targets - GUI and sound libraries are now autodetected or
+  explicitely selected by --with-gui and --with-sound configure options.
+
+* configure_dos.bat: Fix the dosvga and basic targets being merged.
+
+
+2012-05-16  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cartridge.[ch], ui.c, atari800.man, DOC/cart.txt, DOC/CREDITS, DOC/USAGE:
+  Committing patch by Jakub Husak: Support for the SIC! cartridge mapping
+  (without the flash programming feature).
+
+
+2012-05-04  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* configure.ac, util/benchmark.pl: Merge basic, curses, ncurses, pdcurses and
+  dosvga targets - appropriate GUI/input library is now autodetected or
+  selected explicitely by --with-gui configure option.
+
+* ui.c: Fix segfault in the ROM Locations menu.
+
+* atari_basic.c: Fix some GCC warnings.
+
+
+2012-05-01  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* devices.c, ide_internal.h, input.c, log.c, pbi_scsi.c, sio.c, ui.c, util.h,
+  dos/dos_ints.h: Fix some GCC warnings.
+
+
+2012-04-22  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* colours.[ch], colours_ntsc.[ch], colours_pal.[ch], ui.c, sdl/input.c,
+  atari800.man, DOC/USAGE: More exact emulation of PAL colors, including
+  colour delay - based on Altirra but with different table coeffitients,
+  derived from a real machine. Colour delay values for NTSC rescaled to
+  simplify the code.
+
+
+2012-04-21  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* sdl/input.c: Make the display adjustment keyboard shortcuts work by pressing
+  and holding - no more need to press the keys repeatedly.
+
+* colours_ntsc.[ch], colurs_pal.c, colours.[ch], filter_ntsc.c, ui.c,
+  sdl/input.c, atari800.man, DOS/USAGE: Rename color control "Hue" to "Tint".
+  Add tint control also for PAL mode, as there are PAL TVs with tint control.
+
+
+2012-03-31  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cartridge.[ch], ui.c, atari800.man, DOC/cart.txt, DOC/USAGE: Added support
+  for the cartridge mapping used by "Monkey Wrench II for the Atari XL".
+
+
+2012-03-29  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cartridge.[ch], ui.c, atari800.man, DOC/cart.txt: Renamed MicroCalc
+  cartridge mapping to Ultracart - that's the name printed at the cartridge's
+  PCB.
+
+
+2012-03-26  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cartridge.[ch], ui.c, atari800.man, DOC/cart.txt, DOC/USAGE: Added support
+  for the MicroCalc cartridge mapping.
+
+
+2012-03-24  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* atari.c, cfg.c, memory.[ch], ui.c: Simplify Axlon RAM code. Fix bug with
+  Axlon and Mosaic RAM switching to home bank on state read. Add option to
+  control Axlon RAM settings in GUI. Save Axlon RAM settings in config.
+
+
+2012-03-23  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* atari.[ch], cfg.c, ui.c: Fixed 1200XL jumper emulation - the machine has
+  only one onboard jumper, not four.
+
+* atari.c, cfg.c, memory.[ch], ui.c: Simplify Mosaic RAM code. Add option to
+  control Mosaic RAM settings in GUI. Save Mosaic RAM setting in config.
+
+
+2012-03-18  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* atari.c, emuos.[ch], memory.c, Makefile.in, android/jni/Amdroid.mk.in,
+  dc/Makefile.dc, win32/msc/Makefile: Always take UI font from EMUOS - fixes
+  missing font when running the emulator in 5200 mode without configured OS
+  ROMs.
+
+* atari.[ch], cartridge.c, cfg.c, devices.c, esc.c, input.c, memory.c, pia.c,
+  screen.c, sysrom.c, ui_basic.c, ui.c, sdl/input.c, android/jni/jni.c,
+  atari800.man, DOC/USAGE:
+  Reworked support for machine types. All XL/XE features can be enabled/
+  disabled independently. UI menu "Select System" renamed to "System Settings"
+  and reworked - now it only lists systems manufactured originally, with
+  additional options for configuration.
+
+* devices.c, esc.c, sysrom.[ch], ui.c, atari800.man, DOC/USAGE: Support OS
+  revisions from the Arabic 65XE and prototype XL machines.
+
+
+2012-03-11  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* pia.c: Fix recently-introduced bug with MEMORY_cartA0BF_enabled being saved
+  twice in savestates - in both memory.c and pia.c.
+
+* af80.c, cassette.c, devices.c, log.c, monitor.c, pbi_bb.c, pbi_mio.c,
+  pbi_proto80.c, pbi_xld.c, sysrom.c, ui.c, xep80.c, wince/port/missing.c:
+  Remove initialisation of local-static and global arrays to "", to prevent
+  them ending up in .data segment instead of .bss on some architectures/
+  compilers (android-arm). The C standard requires them to be initialised with
+  zeroes at runtime, so initialisation with "" is not needed.
+
+
+2012-03-10  Kostas Nakos  <knakos@gmail.com>
+* android/*: Rename android port to Colleen
+
+
+2012-03-08  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* atari.[ch], cfg.c, input.c, memory.[ch], sysrom.[ch], ui.c, atari800.man,
+  DOC/USAGE: Add emulation of the XEGS (builtin game, detachable keyboard).
+
+* atari.[ch], cfg.c, input.c, ui.c: Add emulation of 1200XL option jumpers,
+  as described in Atari XL Addendum section 3.8.
+
+* ui.c: Emulate 32KB and 48KB memory expansions for the 600XL manufactured by
+  RC Systems.
+
+
+2012-03-05  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* memory.c, pia.[ch], statesav.c: Fix 2 errors related to separate access
+  of CPU and ANTIC to XE RAM:
+  - Self-Test should be visible also in the bank seen by ANTIC.
+  - When saving/loading a savestate in which only ANTIC has access to XE RAM,
+  XE bank number was not saved/loaded correctly. To fix this, loading/saving
+  of MEMORY_xe_bank had to be moved from PIA_StateRead to MEMORY_StateRead; so
+  I also moved a few other variables in those functions to where they belong.
+
+* atari.[ch], cartridge.c, cfg.c, devices.c, esc.c, input.c, memory.c, pia.c,
+  screen.[ch], sysrom.[ch], ui_basic.c, ui.c, atari800.man, DOC/USAGE: Add
+  emulation of the 1200XL (no builtin BASIC, LEDs overlayed on screen, 2 new
+  XL OS revisions). The System ROM Settings menu ceased to fit on one screen,
+  so it is split into submenus.
+
+* sdl/input.c: When in 1200XL mode, map arrows to F1-F4 keys.
+
+* atari.[ch], cartridge.c, devices.c, esc.c, input.c, memory.c, pia.c,
+  screen.c, ui.c, sdl/input.c, android/jni/jni.c: Replace most of the
+  "if Atari800_machine_type ==" statements with references to
+  Atari800_features  - the code was starting to be too convoluted.
+
+
+2012-02-23  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cfg.c, memory.[ch], ui.c: Allow choosing more RAM amounts for 400/800, based
+  on possible combinations of CX852 and CX853 memory modules. Extending the
+  list of available systems in "Select System" menu to include all new RAM
+  sizes would be impractical, so a new option "RAM size" was added instead.
+
+* atari.[ch], memory.c, pia.c, statesav.c: Support for saving new RAM sizes
+  (and the old 52kb size, too) in save states. reading/saving MEMORY_ram_size
+  moved to memory.c, where it belongs; storing RAM size as two separate values
+  (base RAM, XE banks) to make it more future-proof. Fixed the "feature" of
+  saving of unused 192kb.
+
+* statesav.c: Fix old bug that allowed loading of save states with version
+  number higher than current.
+
+
+2012-02-19  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* atari.[ch], devices.c, esc.c, sysrom.[ch]: Make OS patches work depending on
+  OS version. Now patches work correctly also with Rev. A PAL and Rev. 1
+  (600XL).
+
+2012-02-16  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* atari.[ch], cartridge.c, cfg.c, devices.c, esc.c, memory.[ch], sysrom.[ch],
+  ui_basic.c, ui.c, android/jni/jni.c: Merge Atari800_MACHINE_OSA and
+  Atari800_MACHINE_OSB into Atari800_MACHINE_800 - no need for separate machine
+  types since OS revision can now be selected.
+
+* sysrom.c, atari800.man, DOC/USAGE: Support choosing OS revision from command
+  line.
+
+
+2012-02-10  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* atari.c, cfg.[ch], crc32.[ch], sysrom.[ch], ui.c, Makefile.in,
+  dc/Makefile.dc, win32/msc/Makefile, android/jni/jni.c,
+  android/jni/Android.mk.in: Two new modules (crc32, sysrom) that add a new
+  functionality of searching for OS/BASIC ROM images based on known CRC32
+  hashes. Added possibility to select an OS/BASIC version when many are
+  available ("Select System"). When switching between PAL/NTSC, NTSC or PAL
+  version of OS Rev. A is selected accordingly.
+  Android port updated to work correctly (OS/BASIC version selection is still
+  missing though).
+
+
+2012-01-27  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* xep80.c: Rename SetCursor to SetCursorMode to avoid conflict with a winuser.h
+  function under MinGW.
+
+
+2012-01-19  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* xep80_fonts.c, xep80.[ch], videomode.c: Rewtritten XEP80 emulation, based on
+  disassembly of the XEP80 ROM. Programs such as EIGHTY.BAS from XEP80 System
+  Diskette, or XEPLIST2.BAS from ANTIC Oct/1988, now work correctly.
+
+* videomode.c: Added authenthic aspect ratio for XEP80. Fixed issue with
+  1x, 2x, 3x, and "custom" stretch settings - for all videomodes except NORMAL
+  the screen would stretch twice the amount it should.
+
+
+2012-01-12  Kostas Nakos  <knakos@gmail.com>
+* android/*: Implement state saving, fix a keymap preference corner case
+
+
+2012-01-08  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* antic.c: Fix accuracy of ANTIC_CPU_CLOCK when NEW_CYCLE_EXACT is enabled.
+
+* monitor.c: Fix accuracy of cycle counts (when displaying the current state)
+  when NEX_CYCLE_EXACT is enabled.
+
+* xep80.c: Fix (and simplify) the code for I/O timing - it was not resistant
+  to random data appearing in PORTA, which resulted in XEP80 going haywire
+  after coldstart. The change breaks binary compatibility of savestates.
+  Standardise indentation (tabs instead of spaces).
+  Remove the XEP80_ prefix from names of static entities.
+
+
+2012-01-07  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* sdl/input.c: No need to call SDL_GetKeyState() on each frame - moved the
+  call to SDL_INPUT_Initialise().
+
+* xep80.[ch]: Removed variables XEP80_first_row, XEP80_last_row - not used
+  anywhere.
+
+* cfg.c, xep80_fonts.[ch], xep80.[ch]: Load XEP80 fonts from a ROM image
+  instead of storing them in the source file (ROM path stored in config).
+  Generate the XEP80 block font algorithmically instead of storing it in the
+  source file.
+
+* ui.c, videomode.[ch], xep80.[ch], atari800.man, DOC/USAGE, sdl/video_gl.c:
+  Support XEP80's ability to switch the TV system by software. After the
+  changes, the maximum height of the screen is 300 lines.
+
+* sdl/video.c: Fix a glitch that appeared during XEP80 initialisation.
+
+* ui.c: Add option to enable/disable XEP80 to the Emulator Settings menu.
+
+
+2012-01-07  Kostas Nakos  <knakos@gmail.com>
+* android/*: Optimize file selector, allow roaming outside of ext. storage dir
+             Added an exclusion border for paddle mode
+
+
+2011-12-22  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* android/jni/Android.mk.in, dc/Makefile.dc, win32/msc/Makefile: Add missing
+  object img_tape.o to platform-specific Makefiles to make them work again
+  (see Makefile.in revision 1.52).
+
+
+2011-11-29  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cassette.c: Remove excessive logging, committed by mistake yesterday.
+
+
+2011-11-28  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cassette.c: Fix segfault when the -tape parameter points to a nonexistent
+  file.
+
+
+2011-11-16  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* atari_falcon.c, sound_falcon.c, falcon/sound_dma.S: Fix Falcon compilation
+  errors with MiNTLib 0.59.1 and GCC 4.6.2 (still works with GCC 2.95.3 as
+  tested under SpareMiNT).
+
+* atari_basic.c, atari_curses.c, atari_falcon.c, atari_ps2.c, atari_x11.c,
+  sound_falcon.c, sound_oss.c, sound.h, android/jni/sound.c, dos/atari_vga.c,
+  dos/sound_dos.c, sdl/main.c, sdl/sound.[ch], win32/atari_win32.c,
+  win32/sound.c, wince/port/atari_wince.c, wince/port/sound.c: Make
+  Sound_Initialise fail gracefully instead of segfaulting when an option
+  argument is missing. Do not initialise sound unnecessarily when the "-help"
+  option is given.
+
+* antic.c, atari_curses.c, atari.c, platform.h, ui_basic.c, ui.c: Cleanup:
+  gather all declarations of curses_* functions together in platform.h.
+
+* atari.c, configure.ac, devices.c, log.c, monitor.c, screen.c, sio.c,
+  sound_oss.c, ui_basic.c, ui.c: Cleanup to make the ncurses target build with
+  more restrictive CFLAGS (same as the sdl target).
+
+
+2011-11-11  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* af80.[ch], atari.c, cartridge.[ch], devices.[ch], ide.[ch], input.c,
+  pbi_bb.[ch], pbi_mio.[ch], pbi_proto80.[ch], pbi_xld.[ch], pbi.[ch],
+  sdl/video.c: Add or fix Exit functions for files/resources that were not
+  _explicitely_ closed/freed on exit.
+  Add call to Atari800_ErrExit also when commandline-parsing fails.
+  Previously when starting the dosvga target with "atari800 -artif",
+  the emulator would exit without uninitialising VGA, leaving mess on screen.
+
+* amiga/amiga.c, dc/atari_dc.c: Fix Platform_Initialise() not returning
+  a value.
+
+
+2011-11-04  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* monitor.c: Fix a memory leak - buffer allocated by readline() should be
+  freed by user.
+
+* configure.ac: Clean-up of SDL detection - restore the "Don't redefine main"
+  snippet that got mistakenly deleted in revisions 1.108-1.109.
+
+* configure.ac, Makefile.in, DOC/README.android: Cleanup in detection of
+  libreadline and OpenGL:
+  Renamed options --enable-monitor-readline and --enable-opengl to
+  --with-readline and --with-opengl, respectively - Autoconf manual recommends
+  the --with prefix for options requiring external software.
+  Since the AC_CHECK_HEADER (used in OpenGL detection) requires proper setting
+  of CPPFLAGS, rudimentary support for this variable has been added.
+
+* sdl/video_gl.c: Fix wrong definition of "black" colour for the BGRA32 pixel
+  format, which caused a visible blue border around the screen with bilinear
+  filtering and stretch >= 2.
+
+
+2011-10-27  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* afile.c, cassette.[ch], img_tape.[ch], screen.c, ui.c, Makefile.in:
+  Cassette-related code cleanup - functionality related to handling of
+  tape image files split from afile.c and cassette.c to new module img_tape.
+  Functional changes: During cassette insert the old tape is not unmounted
+  until opening of the new tape ended successfully; Added error message when
+  tape opening fails with the -tape command parameter.
+
+
+2011-09-05  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* DOC/cart.txt, DOC/USAGE, atari800.man, cartridge.[ch], ui.c: Added support
+  for Atrax SDX 64/128K cartridge mapping and for the Turbosoft 64/128
+  cartridge mappings.
+
+* cartridge.c: Fixed a bug in OSS 034M/043M mappings - the area filled by $FF
+  should be $A000-$AFF instead of $8000-$9FFF.
+
+
+2011-09-04  Kostas Nakos  <knakos@gmail.com>
+* android/*: Added paddle emulation
+
+
+2011-09-03  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* monitor.c: Code cleanup - split MONITOR_Run() into separate functions for
+  each monitor command. Functionality unchanged.
+
+* af80.[ch], antic.[ch], cartridge.[ch], cpu.c, gtia.[ch], ide.[ch],
+  memory.[ch], monitor.c, pbi_bb.[ch], pbi_mio.[ch], pbi_proto80.[ch],
+  pbi.[ch], pia.[ch], pokey.[ch]: Added option of reading hardware memory
+  without side effects. Used this in the, monitor so now eg. the "M" option
+  doesn't switch cartridge banks while displaying page $D5. Fixed the
+  monitor's "disassemble" functionality - it didn't correctly disassemble code
+  in hardware memory.
+
+
+2011-09-02  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* sdl/input.c: Swapped mapping of right and middle mouse buttons, to make it
+  identical to the X11 and Win32 ports.
+
+
+2011-08-24  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cartridge.[ch], ui.c, atari800.man, DOC/cart.txt, DOC/USAGE: Added support
+  for a 32 KB cartridge format used by Atari Super Turbo Multi-Cartridge.
+
+* cfg.c, rtime.[ch]: Support for saving the state of R-Time 8 in config file.
+
+* atari800.man: Improve formatting (bold, italic etc.), mainly according to
+  man-pages(7).
+
+
+2011-08-06  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* afile.c: Fixed compilation errors for --target=basic introduced on
+  2011-06-27.
+
+
+2011-08-05  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* DOS/cart.txt, DOC/USAGE, cartridge.[ch], ui.c: Added support for the
+  Blizzard-type 4KB cartridge (which contains a 2732 EPROM inside).
+
+
+2011-07-23  Kostas Nakos  <knakos@gmail.com>
+* atari.c: Use FPS defines in autoframeskip
+* android/*: Fix a nasty bug, when orientation was changed during the
+             preferences activity,
+             added shadow rectangle around console keys overlay
+
+
+2011-07-02  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cartridge.[ch], ui.c, atari800.man, DOC/cart.txt, DOC/USAGE: Added support
+  for the OSS 043M cartridge format. The old 034M format is marked as obsolete
+  but still supported. Renamed the OSS cartridge formats to include
+  information on number of ROM chips (043M/034M - two chip, M091 - one chip).
+
+
+2011-06-27  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cassette.c: Fixed a bug with eof_of_tape not always being set to 1 when it
+  should be, f.e. after a call to CASSETTE_Seek(). When the SIO patch was
+  enabled and the tape was Seek'ed past the last block, this could result in
+  a call to CASSETTE_IOLineStatus() while CASSETTE_current_block was higher
+  than CASSETTE_max_block. This in turn would cause division by 0 (due to
+  reading an uninitialilsed value from cassette_baudblock).
+  Now eof_of_tape is set properly after every change of either
+  CASSETTE_current_block or CASSETTE_max_block, so a dangerous call to
+  CASSETTE_IOLineStatus doesn't happen anymore.
+
+* cartridge.c: Fixed a bug introduced in rev. 1.48: CARTRIDGE_StateRead would
+  try to read the cartridge's bank state even if the cartridge was not
+  present; thus the whole state reading would fail.
+
+* afile.c: Support selecting cartridge type when loading a cartridge by Alt+R.
+
+
+2011-06-21  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* ui.c: Fixed a segfault when opening the "Fullscreen resolution" submenu.
+  This was caused by the change in ui.h on 06-20. (reported by Krzysztof
+  Karkosza)
+
+
+2011-06-20  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* sdl/input.c: Fixed a bug with F10 creating interlaced screenshots instead of
+  non-interlaced.
+
+* cartridge.[ch], ui.c, atari800.man, DOC/USAGE: Ported from Atari800WinPLus -
+  an option for enabling/disabling automatic reboot when the cartridge is
+  inserted or removed. (Only applies to the main cartridge. After inserting or
+  removing a piggyback cartridge, it works as earlier - ie. the system will
+  not reboot automatically.)
+  
+* ui.h, ui_basic.c: Reworked detection of menu end (UI_MENU_END). The
+  previous solution stopped working correctly since in the CartManagement menu
+  there are hidden menuitems with the "item" field set to NULL which would be
+  incorrectly detected as end of menu.
+
+
+2011-06-17  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cartridge.c, DOC/cart.txt: Reverted the last change in the 034M mapping
+  regarding switched banks 1 and 2 - on second thought, applying such change
+  to a years-old specification without proper discussion is not a good idea.
+
+
+2011-06-16  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+*cartridge.c, DOC/cart.txt: Fixed an ages-old bug in the OSS 034M cartridge
+  banking scheme. Banks 1 and 2 were switched, which caused all known OSS
+  034M dumps to fail. (There actually are only 3 known images of 034M
+  cartridges:
+  Action! 3.5: http://ftp.pigwa.net/stuff/collections/atari_forever/ROM/ACTION.OSS/ACTION.OSS
+  BASIC XL 1.02: http://ftp.pigwa.net/stuff/collections/atari_forever/ROM/BASICXL.OSS/BXL102.OSS
+  MAC/65 1.0: http://ftp.pigwa.net/stuff/collections/atari_forever/ROM/MAC65.OSS/MAC65.OSS
+  All failed to work before this fix.)
+  Additionally the combinations $D5x1 and $D5x5 were incorrectly described as
+  working - I've changed it to more closely reflect the reality (the
+  combinations cause selection of 2 banks simultaneously - but it's still not
+  emulated 100% exactly).
+
+* cartridge.[ch], atari.c, ui.c: Moved the logic that auto-switches machine
+  type after insertion of a cartridge. Now it resides in cartridge.c, where it
+  belongs. Introduced new function CARTRIDGE_SetType, that should be used to
+  change the cartridge's type. CARTRIDGE_IsFor5200 and CARTRIDGE_Start are not
+  used outside cartridge.c anymore, so I renamed them and made static.
+
+
+2011-06-13  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cartridge.[ch]: Major rewrite, required to fix bugs in piggyback cartridge
+  emulation and with writing/reading savestates with banked cartridges.
+  1. SDX piggyback emulation was broken and apparently written without knowing
+     the cartridge's specs - the SDX cart only reacts to access to address
+     $D5Ex (also $D5Fx in case of the 128K version).
+  2. A piggyback cartridge reacts to access to page $D5 even if it is disabled
+     by the SDX cart. So when processing a read/write to page $D5 both mounted
+     cartridges must be bank-switched.
+  3. A cartridge reacts to page $D5 even if there's an R-Time or
+     IDE hardware installed.
+  3. In savestates the bankswitched cartridge's current state was not stored,
+     and in some cases such savestates didn't work properly when loaded.
+  4. Overall code cleanup - introduced the CARTRIDGE_image_t structure for
+     clarity.
+
+* gtia.[ch], statesav.c, cartridge.[ch] (CARTRIDGE_StateRead)
+  (CARTRIDGE_StateSave): GTIA needs to store its trigger latches in the
+  savestate in order to properly restore after loading a savestate with
+  a banked cartridge. Banked cartridge's current state must also be stored in
+  a savestate. Both changes require bumping up the savestate version number.
+
+* atari.c, ui.c: Apply the new API of cartridge.h.
+
+* DOC/cart.txt: Update the SpartaDOS X sections with info about piggyback
+  cartridges.
+
+* atari.c, cartridge.[ch] (CARTRIDGE_Initialise): Move code for processing
+  cartridge-related commandline optins to cartridge.c.
+
+* cartridge.c, atari800.man, DOC/USAGE: Add -cart-type and -cart2-type
+  options, that allow to choose cartridge type from commandline.
+
+* cartridge.c (CARTRIDGE_ReadConfig, CARTRIDGE_WriteConfig), cfg.c: Support
+  loading and saving of the cartridge settings in the config file.
+
+* cartridge.[ch], ui.c, atari800.man, DOC/cart.txt DOC/USAGE: Add support for
+  the OSS The Writer's Tool cartridge mapping.
+
+
+2011-06-08  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* ui_basic.c: Allow opening up the file selector when the given PATH is
+  invalid. When a diskette image is mounted, its path is cached in the
+  emulator. If, in the meantime, the path to that file have become invalid
+  (e.g. the directory in which the file resided have been deleted), then
+  reopening the file selector for that particular diskette would have failed.
+
+* cartridge.c: Unify duplicate code in CARTRIDGE_Insert and
+  CARTRIDGE_Insert_Second.
+
+
+2011-06-05  Kostas Nakos  <knakos@gmail.com>
+* android/*: Implement extended key remapping,
+             Support Xperia play keycodes,
+             Remap dpad enter to break,
+             New NTSC/PAL tv mode preference
+
+
+2011-05-22  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* DOC/USAGE, atari800.man, cassette.[ch], ui.c: Add an option for making the
+  attached cassette image read-only.
+
+* cassette.[ch]: Cleanup - rearrange function order to place the functions
+  related to the SIO patch together at the bottom of the files.
+
+* cartridge.[ch], ui.c: Merge "Insert Cartridge"/"Remove Cartridge" menu
+  options into one, to make it consistent with other file-selectors in the
+  menu (ie. display filename, Enter=Insert, BkSp=Remove). Ditto for the
+  "Insert|Remove SDX Piggyback Cartridge" options.
+
+* ui.c: Don't leave the "Cartridge Management" menu after inserting/removing
+  a cartridge. The behaviour was inconsistent with other menus.
+
+* screen.c: Minor fix - missing "else" in Screen_Initialise().
+
+
+2011-05-21  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* sio.c: Fixed a bug with SIO sounds remaining audible after saving to tape
+  with SIO patch (reported by Krzysztof Karkosza).
+
+* atari.c: During coldstart, don't automatically hold Option on non-XL/XE
+  machines. This fixes unwanted keystrokes when running cartridges on 400/800
+  with the "Disable Basic" option. Also, don't hold Start on booting the 5200.
+
+* memory.c: Bugfix: When "Selecting System" and choosing 800/48KB RAM twice
+  in a row, BASIC would get disabled even if the "Disable BASIC" option was
+  set to "No". This was caused by missing initialisation of cartridge memory
+  in MEMORY_InitialiseMachine().
+
+
+2011-05-18  Tomasz Krasuski <kr0tki@poczta.onet.pl>
+* cassette.c: Fixed a bug with CASSETTE_description not being properly ended
+  with '\0' when tape is inserted (reported by Achim Haertel).
+
+
+2011-05-15  Tomasz Krasuski <kr0tki@poczta.onet.pl>
+* cassette.[ch], pokey.c, sio.c: Improve cassette emulation, to allow loading
+  some non-standard tapes (e.g. Feud/Turbo 2600, Miecze Valdgira II,
+  Operation Blood).
+  Emulation of SERIN was inaccurate - new byte appeared in SERIN only if the
+  serial input IRQ was enabled, and it happened 2 scanlines after the byte's
+  transmission has _started_. On a real machine, a byte appears in
+  SERIN at the same time the serial input IRQ is generated, that is, when
+  the byte's transmission _ends_; and it happens even when the IRQ is
+  disabled. The bug caused issues with tapes of _certain_ baudrates (e.g. 577
+  baud).
+  Changed the way cassette IRQ is invoked - there is no notion of
+  "cassette IRQ delay" anymore. Instead, CASSETTE_AddScanLine returns TRUE
+  on SERIN update.
+  Added partial emulation of SKCTL reset bits - due to improved SERIN
+  accuracy proper emulation of serial IO resetting is now needed to load tapes
+  correctly.
+  
+
+2011-05-09  Tomasz Krasuski <kr0tki@poczta.onet.pl>
+* pia.c: Fixed a bug with PIA's tape motor state and COMMAND line state not
+  being restored on loading of a savestate.
+
+* screen.c: Display SIO activity for tapes only when a tape image is attached.
+
+* cassette.[ch], sio.c: Fixed a segfault when reading tape blocks longer than
+  4096 bytes, by dynamically allocationg memory when needed. Blocks loaded
+  with SIO patch are now copied to Atari memory even when they are too short
+  or the checksum is wrong - this duplicates the behaviour of the unpatched
+  system. CASSETTE_buffer no longer used outside cassette.c, so it's made
+  static.
+
+
+2011-05-08  Tomasz Krasuski <kr0tki@poczta.onet.pl>
+* atari.c, cassette.[ch], cfg.c, screen.c, sio.c, ui.c: Added support for
+  switching bettween tape loading/saving without need to re-attach a tape
+  image. Added a "Tape management" menu with new options for tape rewinding
+  and creating a blank CAS image. Added loading/saving of the currently
+  attached tape image in the config file. Without the SIO patch, a user now
+  must manually switch tape recording on/off if needed. Fixed some bugs and
+  cleaned the code a bit.
+
+* DOC/directx.txt, atari_curses.c, atari_falcon.c, atari_ps2.c,
+  dos/atari_vga.c, javanvm/atari_javanvm.c, sdl/input.c, win32/atari_win32.c:
+  Added the Alt+T shortcut to the new Tape Management menu. The "tilt screen"
+  in the Win32 port has been remapped to Alt+Shift+Z to avoid conflict.
+
+* DOC/USAGE: Updated the "Cassette operation" section with the new features.
+
+* screen.c: Added displaying of current tape position when sector counter is
+  enabled. Display a "Dn" symbol instead of "n" during disk operations.
+
+* ui.c: Renamed the "Show disk activity" and "Show sector counter" options to
+  reflect the fact that they also affect tape operations.
+
+
+2011-05-05  Petr Stehlik <pstehlik@sophics.cz>
+* atari800.spec: David Bolt has provided an update that allows building
+  the RPM packages for Fedora, CentOS, SUSE and Mandriva distributions.
+
+
+2011-04-30  Tomasz Krasuski <kr0tki@poczta.onet.pl>
+* videomode.c: Fixed a bug with not allowing a VIDEOMODE_HOST_ASPECT_RATIO=0:0
+  entry in the config file. Now when this value is encountered, the emulator
+  performs aspect ratio autodetection.
+
+* DOC/USAGE, atari800.man, atari.[ch], atari_curses.c, cfg.[ch], colours.c,
+  input.c, ui.c, util.c, sdl/sound.c: Added support for automatic saving of
+  configuration on emulator exit. (Had to move the System ROM Settings to
+  a separate submenu in UI in order to make place for the new option.)
+  Autosaving is performed only when a user closed the emulator, and not when
+  the emulator closed itself eg. due to failure. For exiting an emulator due
+  to error, a new function Atari800_ErrExit() is provided. This function works
+  like Atari800_Exit but omits the autosaving.
+
+
 ** 2.2.1 released on 2011-04-28
 
 2011-04-28  Petr Stehlik <pstehlik@sophics.cz>

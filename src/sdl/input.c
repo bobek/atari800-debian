@@ -39,7 +39,7 @@
 #include "sdl/input.h"
 #include "akey.h"
 #include "atari.h"
-#include "colours_ntsc.h"
+#include "colours.h"
 #include "config.h"
 #include "filter_ntsc.h"
 #include "../input.h"
@@ -349,14 +349,6 @@ int PLATFORM_Keyboard(void)
 	else if (!key_pressed)
 		return AKEY_NONE;
 
-	kbhits = SDL_GetKeyState(NULL);
-
-	if (kbhits == NULL) {
-		Log_print("oops, kbhits is NULL!");
-		Log_flushlog();
-		exit(-1);
-	}
-
 	UI_alt_function = -1;
 	if (kbhits[SDLK_LALT]) {
 		if (key_pressed) {
@@ -406,6 +398,9 @@ int PLATFORM_Keyboard(void)
 			case SDLK_c:
 				UI_alt_function = UI_MENU_CARTRIDGE;
 				break;
+			case SDLK_t:
+				UI_alt_function = UI_MENU_CASSETTE;
+				break;
 			case SDLK_BACKSLASH:
 				return AKEY_PBI_BB_MENU;
 			case SDLK_m:
@@ -414,20 +409,16 @@ int PLATFORM_Keyboard(void)
 				key_pressed = 0;
 				break;
 			case SDLK_1:
-				key_pressed = 0;
-				if (Atari800_tv_mode == Atari800_TV_NTSC) {
-					if (kbhits[SDLK_LSHIFT]) {
-						if (COLOURS_NTSC_specific_setup.hue > COLOURS_NTSC_HUE_MIN)
-							COLOURS_NTSC_specific_setup.hue -= 0.02;
-					} else {
-						if (COLOURS_NTSC_specific_setup.hue < COLOURS_NTSC_HUE_MAX)
-							COLOURS_NTSC_specific_setup.hue += 0.02;
-					}
-					Colours_Update();
+				if (kbhits[SDLK_LSHIFT]) {
+					if (Colours_setup->hue > COLOURS_HUE_MIN)
+						Colours_setup->hue -= 0.02;
+				} else {
+					if (Colours_setup->hue < COLOURS_HUE_MAX)
+						Colours_setup->hue += 0.02;
 				}
-				break;
+				Colours_Update();
+				return AKEY_NONE;
 			case SDLK_2:
-				key_pressed = 0;
 				if (kbhits[SDLK_LSHIFT]) {
 					if (Colours_setup->saturation > COLOURS_SATURATION_MIN)
 						Colours_setup->saturation -= 0.02;
@@ -436,9 +427,8 @@ int PLATFORM_Keyboard(void)
 						Colours_setup->saturation += 0.02;
 				}
 				Colours_Update();
-				break;
+				return AKEY_NONE;
 			case SDLK_3:
-				key_pressed = 0;
 				if (kbhits[SDLK_LSHIFT]) {
 					if (Colours_setup->contrast > COLOURS_CONTRAST_MIN)
 						Colours_setup->contrast -= 0.04;
@@ -447,9 +437,8 @@ int PLATFORM_Keyboard(void)
 					Colours_setup->contrast += 0.04;
 				}
 				Colours_Update();
-				break;
+				return AKEY_NONE;
 			case SDLK_4:
-				key_pressed = 0;
 				if (kbhits[SDLK_LSHIFT]) {
 					if (Colours_setup->brightness > COLOURS_BRIGHTNESS_MIN)
 						Colours_setup->brightness -= 0.04;
@@ -458,9 +447,8 @@ int PLATFORM_Keyboard(void)
 						Colours_setup->brightness += 0.04;
 				}
 				Colours_Update();
-				break;
+				return AKEY_NONE;
 			case SDLK_5:
-				key_pressed = 0;
 				if (kbhits[SDLK_LSHIFT]) {
 					if (Colours_setup->gamma > COLOURS_GAMMA_MIN)
 						Colours_setup->gamma -= 0.02;
@@ -469,32 +457,27 @@ int PLATFORM_Keyboard(void)
 						Colours_setup->gamma += 0.02;
 				}
 				Colours_Update();
-				break;
+				return AKEY_NONE;
 			case SDLK_6:
-				key_pressed = 0;
-				if (Atari800_tv_mode == Atari800_TV_NTSC) {
-					if (kbhits[SDLK_LSHIFT]) {
-						if (COLOURS_NTSC_specific_setup.color_delay > COLOURS_NTSC_DELAY_MIN)
-							COLOURS_NTSC_specific_setup.color_delay -= 0.1;
-					} else {
-						if (COLOURS_NTSC_specific_setup.color_delay < COLOURS_NTSC_DELAY_MAX)
-							COLOURS_NTSC_specific_setup.color_delay += 0.1;
-					}
-					Colours_Update();
+				if (kbhits[SDLK_LSHIFT]) {
+					if (Colours_setup->color_delay > COLOURS_DELAY_MIN)
+						Colours_setup->color_delay -= 0.4;
+				} else {
+					if (Colours_setup->color_delay < COLOURS_DELAY_MAX)
+						Colours_setup->color_delay += 0.4;
 				}
-				break;
+				Colours_Update();
+				return AKEY_NONE;
 			case SDLK_LEFTBRACKET:
-				key_pressed = 0;
 				if (kbhits[SDLK_LSHIFT])
-					SDL_VIDEO_SetScanlinesPercentage(SDL_VIDEO_scanlines_percentage - 5);
+					SDL_VIDEO_SetScanlinesPercentage(SDL_VIDEO_scanlines_percentage - 1);
 				else
-					SDL_VIDEO_SetScanlinesPercentage(SDL_VIDEO_scanlines_percentage + 5);
-				break;
+					SDL_VIDEO_SetScanlinesPercentage(SDL_VIDEO_scanlines_percentage + 1);
+				return AKEY_NONE;
 			default:
 				if(FILTER_NTSC_emu != NULL){
 					switch(lastkey){
 					case SDLK_7:
-						key_pressed = 0;
 						if (kbhits[SDLK_LSHIFT]) {
 							if (FILTER_NTSC_setup.sharpness > FILTER_NTSC_SHARPNESS_MIN)
 								FILTER_NTSC_setup.sharpness -= 0.02;
@@ -503,9 +486,8 @@ int PLATFORM_Keyboard(void)
 								FILTER_NTSC_setup.sharpness += 0.02;
 						}
 						FILTER_NTSC_Update(FILTER_NTSC_emu);
-						break;
+						return AKEY_NONE;
 					case SDLK_8:
-						key_pressed = 0;
 						if (kbhits[SDLK_LSHIFT]) {
 							if (FILTER_NTSC_setup.resolution > FILTER_NTSC_RESOLUTION_MIN)
 								FILTER_NTSC_setup.resolution -= 0.02;
@@ -514,9 +496,8 @@ int PLATFORM_Keyboard(void)
 								FILTER_NTSC_setup.resolution += 0.02;
 						}
 						FILTER_NTSC_Update(FILTER_NTSC_emu);
-						break;
+						return AKEY_NONE;
 					case SDLK_9:
-						key_pressed = 0;
 						if (kbhits[SDLK_LSHIFT]) {
 							if (FILTER_NTSC_setup.artifacts > FILTER_NTSC_ARTIFACTS_MIN)
 								FILTER_NTSC_setup.artifacts -= 0.02;
@@ -525,9 +506,8 @@ int PLATFORM_Keyboard(void)
 								FILTER_NTSC_setup.artifacts += 0.02;
 						}
 						FILTER_NTSC_Update(FILTER_NTSC_emu);
-						break;
+						return AKEY_NONE;
 					case SDLK_0:
-						key_pressed = 0;
 						if (kbhits[SDLK_LSHIFT]) {
 							if (FILTER_NTSC_setup.fringing > FILTER_NTSC_FRINGING_MIN)
 								FILTER_NTSC_setup.fringing -= 0.02;
@@ -536,9 +516,8 @@ int PLATFORM_Keyboard(void)
 								FILTER_NTSC_setup.fringing += 0.02;
 						}
 						FILTER_NTSC_Update(FILTER_NTSC_emu);
-						break;
+						return AKEY_NONE;
 					case SDLK_MINUS:
-						key_pressed = 0;
 						if (kbhits[SDLK_LSHIFT]) {
 							if (FILTER_NTSC_setup.bleed > FILTER_NTSC_BLEED_MIN)
 								FILTER_NTSC_setup.bleed -= 0.02;
@@ -547,9 +526,8 @@ int PLATFORM_Keyboard(void)
 								FILTER_NTSC_setup.bleed += 0.02;
 						}
 						FILTER_NTSC_Update(FILTER_NTSC_emu);
-						break;
+						return AKEY_NONE;
 					case SDLK_EQUALS:
-						key_pressed = 0;
 						if (kbhits[SDLK_LSHIFT]) {
 							if (FILTER_NTSC_setup.burst_phase > FILTER_NTSC_BURST_PHASE_MIN)
 								FILTER_NTSC_setup.burst_phase -= 0.02;
@@ -558,7 +536,7 @@ int PLATFORM_Keyboard(void)
 								FILTER_NTSC_setup.burst_phase += 0.02;
 						}
 						FILTER_NTSC_Update(FILTER_NTSC_emu);
-						break;
+						return AKEY_NONE;
 					case SDLK_RIGHTBRACKET:
 						key_pressed = 0;
 						FILTER_NTSC_NextPreset();
@@ -577,7 +555,7 @@ int PLATFORM_Keyboard(void)
 	else
 		INPUT_key_shift = 0;
 
-    /* CONTROL STATE */
+	/* CONTROL STATE */
 	if ((kbhits[SDLK_LCTRL]) || (kbhits[SDLK_RCTRL]))
 		key_control = 1;
 	else
@@ -616,7 +594,7 @@ int PLATFORM_Keyboard(void)
 		return AKEY_EXIT;
 	case SDLK_F10:
 		key_pressed = 0;
-		return INPUT_key_shift ? AKEY_SCREENSHOT_INTERLACE : AKEY_SCREENSHOT_INTERLACE;
+		return INPUT_key_shift ? AKEY_SCREENSHOT_INTERLACE : AKEY_SCREENSHOT;
 	case SDLK_F12:
 		key_pressed = 0;
 		return AKEY_TURBO;
@@ -723,13 +701,13 @@ int PLATFORM_Keyboard(void)
 	case SDLK_RETURN:
 		return AKEY_RETURN ^ shiftctrl;
 	case SDLK_LEFT:
-		return (INPUT_key_shift ? AKEY_PLUS : AKEY_LEFT) ^ shiftctrl;
+		return (!UI_is_active && Atari800_f_keys ? AKEY_F3 : (INPUT_key_shift ? AKEY_PLUS : AKEY_LEFT)) ^ shiftctrl;
 	case SDLK_RIGHT:
-		return (INPUT_key_shift ? AKEY_ASTERISK : AKEY_RIGHT) ^ shiftctrl;
+		return (!UI_is_active && Atari800_f_keys ? AKEY_F4 : (INPUT_key_shift ? AKEY_ASTERISK : AKEY_RIGHT)) ^ shiftctrl;
 	case SDLK_UP:
-		return (INPUT_key_shift ? AKEY_MINUS : AKEY_UP) ^ shiftctrl;
+		return (!UI_is_active && Atari800_f_keys ? AKEY_F1 : (INPUT_key_shift ? AKEY_MINUS : AKEY_UP)) ^ shiftctrl;
 	case SDLK_DOWN:
-		return (INPUT_key_shift ? AKEY_EQUAL : AKEY_DOWN) ^ shiftctrl;
+		return (!UI_is_active && Atari800_f_keys ? AKEY_F2 : (INPUT_key_shift ? AKEY_EQUAL : AKEY_DOWN)) ^ shiftctrl;
 	case SDLK_ESCAPE:
 		/* Windows takes ctrl+esc and ctrl+shift+esc */
 		return AKEY_ESCAPE ^ shiftctrl;
@@ -1118,9 +1096,9 @@ void SDL_INPUT_Mouse(void)
 	}
 
 	INPUT_mouse_buttons =
-		((buttons & SDL_BUTTON(1)) ? 1 : 0) |
-		((buttons & SDL_BUTTON(2)) ? 2 : 0) |
-		((buttons & SDL_BUTTON(3)) ? 4 : 0);
+		((buttons & SDL_BUTTON(1)) ? 1 : 0) | /* Left button */
+		((buttons & SDL_BUTTON(3)) ? 2 : 0) | /* Right button */
+		((buttons & SDL_BUTTON(2)) ? 4 : 0); /* Middle button */
 }
 
 static void Init_SDL_Joysticks(int first, int second)
@@ -1225,6 +1203,14 @@ int SDL_INPUT_Initialise(int *argc, char *argv[])
 	}
 	if(grab_mouse)
 		SDL_WM_GrabInput(SDL_GRAB_ON);
+
+	kbhits = SDL_GetKeyState(NULL);
+
+	if (kbhits == NULL) {
+		Log_print("SDL_GetKeyState() failed");
+		Log_flushlog();
+		return FALSE;
+	}
 
 	return TRUE;
 }

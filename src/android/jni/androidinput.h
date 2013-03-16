@@ -86,14 +86,23 @@ enum
 	SOFTJOY_FIRE,
 	SOFTJOY_MAXKEYS
 };
-extern UBYTE softjoymap[SOFTJOY_MAXKEYS][2];
+#define SOFTJOY_MAXACTIONS 3
+#define SOFTJOY_ACTIONBASE SOFTJOY_MAXKEYS
+#define ACTION_NONE 0xFF
+extern UBYTE softjoymap[SOFTJOY_MAXKEYS + SOFTJOY_MAXACTIONS][2];
+
 extern int Android_SoftjoyEnable;
 extern int Android_Joyleft;
 extern float Android_Splitpct;
 extern int Android_Split;
 extern int Android_DerotateKeys;
+extern int Android_Paddle;
+extern int Android_PlanetaryDefense;
+extern SWORD Android_POTX;
+extern SWORD Android_POTY;
+extern UBYTE Android_ReversePddle;
 
-void Android_TouchEvent(int x1, int y1, int s1, int x2, int y2, int s2);
+int  Android_TouchEvent(int x1, int y1, int s1, int x2, int y2, int s2);
 void Android_KeyEvent(int k, int s);
 void Input_Initialize(void);
 void Keyboard_Enqueue(int key);

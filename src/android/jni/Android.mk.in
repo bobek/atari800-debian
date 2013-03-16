@@ -14,9 +14,12 @@ A800_CORE_OBJS  := \
 	compfile.o \
 	cfg.o \
 	cpu.o \
+	crc32.o \
 	devices.o \
+	emuos.o \
 	esc.o \
 	gtia.o \
+	img_tape.o \
 	log.o \
 	memory.o \
 	monitor.o \
@@ -25,6 +28,7 @@ A800_CORE_OBJS  := \
 	pokey.o \
 	rtime.o \
 	sio.o \
+	sysrom.o \
 	util.o \
 	@OBJS@
 A800_CORE_LIBS   := @LIBS@

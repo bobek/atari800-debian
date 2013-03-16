@@ -39,6 +39,7 @@ LIBS=-Wl,--start-group -lkallisti -lz -lbz2 -lm -lc -lgcc -Wl,--end-group
 
 OBJ =	atari.o \
 	cpu.o \
+	emuos.o \
 	sio.o \
 	devices.o \
 	antic.o \
@@ -46,6 +47,7 @@ OBJ =	atari.o \
 	pokey.o \
 	pia.o \
 	cartridge.o \
+	crc32.o \
 	rtime.o \
 	ui.o \
 	ui_basic.o \
@@ -54,12 +56,14 @@ OBJ =	atari.o \
 	compfile.o \
 	memory.o \
 	statesav.o \
+	sysrom.o \
 	colours.o \
 	mzpokeysnd.o \
 	remez.o \
 	pokeysnd.o \
 	sndsave.o \
 	cassette.o \
+	img_tape.o \
 	util.o \
 	pbi.o \
 	screen.o \
