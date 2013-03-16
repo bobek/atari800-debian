@@ -20,7 +20,7 @@ else
 	endif
 endif
 
-CFLAGS = @CFLAGS@
+CFLAGS = @CFLAGS@ @CPPFLAGS@
 LDFLAGS = @LDFLAGS@
 
 INSTALL = @INSTALL@
@@ -43,9 +43,12 @@ OBJS = \
 	compfile.o \
 	cfg.o \
 	cpu.o \
+	crc32.o \
 	devices.o \
+	emuos.o \
 	esc.o \
 	gtia.o \
+	img_tape.o \
 	log.o \
 	memory.o \
 	monitor.o \
@@ -54,6 +57,7 @@ OBJS = \
 	pokey.o \
 	rtime.o \
 	sio.o \
+	sysrom.o \
 	util.o \
 	@OBJS@
 

@@ -307,7 +307,8 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 	timer_initialize();
 #endif
 #ifdef SOUND
-	Sound_Initialise(argc, argv);
+	if (!Sound_Initialise(argc, argv))
+		return FALSE;
 #endif
 
 	return TRUE;
@@ -813,6 +814,9 @@ if (Atari800_machine_type != Atari800_MACHINE_5200 || UI_is_active) {
 			case 0x16:
 				UI_alt_function = UI_MENU_SAVESTATE;
 				return AKEY_UI;
+			case 0x17:
+				UI_alt_function = UI_MENU_CASSETTE;
+				return AKEY_UI;
 			case 0x4:
 				UI_alt_function = UI_MENU_ABOUT;
 				return AKEY_UI;
@@ -940,7 +944,7 @@ int Atari_ReadDir(char *fullpath, char *filename, int *isdir,
 
 #ifdef SOUND
 
-void Sound_Initialise(int *argc, char *argv[])
+int Sound_Initialise(int *argc, char *argv[])
 {
 	if (audsrv_init() != 0)
 		Log_print("failed to initialize audsrv: %s", audsrv_get_error_string());
@@ -953,6 +957,7 @@ void Sound_Initialise(int *argc, char *argv[])
 		audsrv_set_volume(MAX_VOLUME);
 		POKEYSND_Init(POKEYSND_FREQ_17_EXACT, 44100, 1, 0);
 	}
+	return TRUE;
 }
 
 void Sound_Exit(void)

@@ -26,6 +26,7 @@
 #include "config.h"
 #include "monitor.h"
 #include "log.h"
+#include "platform.h"
 #ifdef SOUND
 #include "sound.h"
 #endif
@@ -33,7 +34,8 @@
 int PLATFORM_Initialise(int *argc, char *argv[])
 {
 #ifdef SOUND
-	Sound_Initialise(argc, argv);
+	if (!Sound_Initialise(argc, argv))
+		return FALSE;
 #endif
 
 	return TRUE;

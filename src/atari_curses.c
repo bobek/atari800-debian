@@ -37,6 +37,7 @@
 #include "akey.h"
 #include "log.h"
 #include "monitor.h"
+#include "platform.h"
 #include "ui.h" /* UI_alt_function */
 
 #ifdef SOUND
@@ -92,7 +93,8 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 	nodelay(stdscr, 1);			/* Don't block for keypress */
 
 #ifdef SOUND
-	Sound_Initialise(argc, argv);
+	if (!Sound_Initialise(argc, argv))
+		return FALSE;
 #endif
 
 	return TRUE;
@@ -288,7 +290,7 @@ int PLATFORM_Keyboard(void)
 #if 0
 	/* for debugging */
 	if (keycode > 0) {
-		Atari800_Exit(FALSE);
+		Atari800_ErrExit();
 		printf("keycode == %d (0x%x)\n", keycode, keycode);
 		exit(1);
 	}
@@ -813,6 +815,10 @@ int PLATFORM_Keyboard(void)
 		break;
 	case ALT_S:
 		UI_alt_function = UI_MENU_SAVESTATE;
+		keycode = AKEY_UI;
+		break;
+	case ALT_T:
+		UI_alt_function = UI_MENU_CASSETTE;
 		keycode = AKEY_UI;
 		break;
 	case ALT_W:

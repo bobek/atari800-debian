@@ -22,7 +22,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-package name.nick.jubanka.atari800;
+package name.nick.jubanka.colleen;
 
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
@@ -52,13 +52,18 @@ import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.text.Html;
 import android.text.method.LinkMovementMethod;
+import android.app.ActionBar;
+import android.view.Window;
+import android.view.WindowManager;
+import android.os.Build;
+import android.view.View;
 
 
 public final class MainActivity extends Activity
 {
-	public static final String ACTION_INSERT_REBOOT = "name.nick.jubanka.atari800.FileSelector.INSERTREBOOT";
-	public static final String ACTION_INSERT_ONLY   = "name.nick.jubanka.atari800.FileSelector.INSERTONLY";
-	public static final String ACTION_SET_ROMPATH   = "name.nick.jubanka.atari800.FileSelector.SETROMPATH";
+	public static final String ACTION_INSERT_REBOOT = "name.nick.jubanka.colleen.FileSelector.INSERTREBOOT";
+	public static final String ACTION_INSERT_ONLY   = "name.nick.jubanka.colleen.FileSelector.INSERTONLY";
+	public static final String ACTION_SET_ROMPATH   = "name.nick.jubanka.colleen.FileSelector.SETROMPATH";
 
 	private static final String TAG = "MainActivity";
 	private static final int ACTIVITY_FSEL = 1;
@@ -66,9 +71,12 @@ public final class MainActivity extends Activity
 	private static final int DLG_WELCOME = 0;
 	private static final int DLG_PATHSETUP = 1;
 	private static final int DLG_CHANGES = 2;
+	private static final int DLG_BRWSCONFRM = 3;
+	private static final int DLG_SELCARTTYPE = 4;
 
 	public static String _pkgversion;
 	public static String _coreversion;
+	public ActionBarNull _aBar = null;
 	private static boolean _initialized = false;
 	private static String _curDiskFname = null;
 	private A800view _view = null;
@@ -76,9 +84,95 @@ public final class MainActivity extends Activity
 	private InputMethodManager _imng;
 	private Settings _settings = null;
 	private boolean _bootupconfig = false;
+	private String _cartTypes[][] = null;
+
+	public static class ActionBarNull {
+		public ActionBarNull(Activity a)					{};
+		public void hide(Activity a)						{};
+		public void hide(Activity a, boolean p)				{};
+		public void hide(Activity a, boolean p, boolean f)	{};
+		public void show(Activity a) 						{};
+		public boolean isShowing(Activity a)				{ return false; }
+		public boolean isReal()								{ return false; }
+		public void init(Activity a) 						{};
+	}
+
+	public static final class ActionBarHelp extends ActionBarNull {
+		public ActionBarHelp(Activity a) {
+			super(a);
+		}
+
+		@Override
+		public void hide(Activity a) {
+			hide(a, true);
+		}
+
+		@Override
+		public void hide(Activity a, boolean p) {
+			hide(a, p, false);
+		}
+
+		@Override
+		public void hide(Activity a, boolean p, boolean f) {
+			ActionBar ab = a.getActionBar();
+			View v = ((MainActivity) a)._view;
+			if ( !f && !ab.isShowing() &&
+				(v.getSystemUiVisibility() & View.STATUS_BAR_HIDDEN) == View.STATUS_BAR_HIDDEN )
+			   	return;
+
+			if (Integer.parseInt(Build.VERSION.SDK) < Build.VERSION_CODES.JELLY_BEAN) {
+				a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+				a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+			}
+			if (v != null) {
+				int flags = View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN 	|
+							View.SYSTEM_UI_FLAG_LAYOUT_STABLE 		|
+							View.SYSTEM_UI_FLAG_FULLSCREEN			|
+							View.STATUS_BAR_HIDDEN;
+				if (p == true)
+					flags |= View.SYSTEM_UI_FLAG_LOW_PROFILE;
+				v.setSystemUiVisibility(flags);
+			}
+			ab.hide();
+			((MainActivity) a).pauseEmulation(false);
+		}
+
+		@Override
+		public void show(Activity a) {
+			ActionBar ab = a.getActionBar();
+			if (ab.isShowing())		return;
+
+			((MainActivity) a).pauseEmulation(true);
+			if (Integer.parseInt(Build.VERSION.SDK) < Build.VERSION_CODES.JELLY_BEAN) {
+				a.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+				a.getWindow().addFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+			}
+			View v = ((MainActivity) a)._view;
+			if (v != null) v.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+												   View.SYSTEM_UI_FLAG_LAYOUT_STABLE	 |
+												   View.STATUS_BAR_VISIBLE);
+			ab.show();
+		}
+
+		@Override
+		public boolean isShowing(Activity a) {
+			return a.getActionBar().isShowing();
+		}
+
+		@Override
+		public boolean isReal() {
+			return true;
+		}
+
+		@Override
+		public void init(Activity a) {
+			a.getActionBar().setBackgroundDrawable(a.getResources().getDrawable(R.drawable.actionbar_bg));
+		}
+	}
+
 
 	static {
-        System.loadLibrary("atari800");
+		System.loadLibrary("atari800");
 		_coreversion = NativeInit();
 	}
 	
@@ -86,24 +180,40 @@ public final class MainActivity extends Activity
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 
+		if (Integer.parseInt(Build.VERSION.SDK) >= Build.VERSION_CODES.HONEYCOMB)
+			_aBar = new ActionBarHelp(this);
+		else
+			_aBar = new ActionBarNull(this);
+
 		_view = new A800view(this);
 		setContentView(_view);
 		_view.setKeepScreenOn(true);
 
+		_aBar.init(this);
+		_aBar.hide(this);
+
 		_imng = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
 
 		PreferenceManager.setDefaultValues(this, R.xml.preferences, true);
-		_settings = new Settings(PreferenceManager.getDefaultSharedPreferences(this), this);
+		Object obj = getLastNonConfigurationInstance();
+		_settings = new Settings(PreferenceManager.getDefaultSharedPreferences(this), this, obj);
 		_pkgversion = getPInfo().versionName;
+
 		if (!_initialized) {
 			_settings.fetchApplySettings();
 			_initialized = true;
 			bootupMsgs();
 		} else {
 			_settings.fetch();
+			if (obj != null)	_settings.testApply();
 			_settings.commit();
 			soundInit(false);
 		}
+	}
+
+	@Override
+	public Object onRetainNonConfigurationInstance() {
+		return (Object) _settings.serialize();
 	}
 
 	private void bootupMsgs() {
@@ -127,7 +237,24 @@ public final class MainActivity extends Activity
 			_bootupconfig = true;
 			pauseEmulation(true);
 			showDialog(DLG_CHANGES);
+			return;
 		}
+		Toast.makeText(this,
+					   _aBar.isReal() ? R.string.actionbarhelptoast : R.string.noactionbarhelptoast,
+					   Toast.LENGTH_SHORT).show();
+	}
+
+	public void message(int msg) {
+		switch (msg) {
+		case A800Renderer.REQ_BROWSER:
+			runOnUiThread(new Runnable() {
+				@Override
+				public void run() {
+					showDialog(DLG_BRWSCONFRM);
+				}
+			});
+			break;
+		};
 	}
 
 	@Override
@@ -217,6 +344,88 @@ public final class MainActivity extends Activity
 								_bootupconfig = false;
 								pauseEmulation(false);
 								dismissDialog(DLG_CHANGES);
+								Toast.makeText(MainActivity.this, _aBar.isReal() ?
+														R.string.actionbarhelptoast :
+														R.string.noactionbarhelptoast,
+											   Toast.LENGTH_SHORT).show();
+							}
+							})
+						.create();
+			break;
+
+		case DLG_BRWSCONFRM:
+			String url = NativeGetURL();
+			if (url.length() == 0) {
+				d = null;
+				break;
+			}
+			if (! validateURL(url)) {
+				Log.d(TAG, "Browser request denied for improper url " + url);
+				d = null;
+				NativeClearDevB();
+				Toast.makeText(this, R.string.browserreqdenied, Toast.LENGTH_SHORT).show();
+				break;
+			}
+			pauseEmulation(true);
+			d = new AlertDialog.Builder(this)
+						.setTitle(R.string.warning)
+						.setIcon(android.R.drawable.ic_dialog_alert)
+						.setCancelable(false)
+						.setPositiveButton(R.string.yes, new DialogInterface.OnClickListener() {
+							@Override
+							public void onClick(DialogInterface d, int i) {
+								String u = NativeGetURL().trim();
+								Log.d(TAG, "Spawning browser for " + u);
+								pauseEmulation(false);
+								try {
+									startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u)));
+								} catch (Exception e1) {
+									Log.d(TAG, "Exception, trying with lower case");
+									try {
+										startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(u.toLowerCase())));
+									} catch (Exception e2) {
+										Log.d(TAG, "Exception, failed, giving up");
+									}
+								}
+								NativeClearDevB();
+							}
+							})
+						.setNegativeButton(R.string.no, new DialogInterface.OnClickListener() {
+							@Override
+							public void onClick(DialogInterface d, int i) {
+								pauseEmulation(false);
+								NativeClearDevB();
+							}
+							})
+						.setMessage("")
+						.create();
+			break;
+
+		case DLG_SELCARTTYPE:
+			if (_cartTypes == null || _cartTypes.length == 0) {
+				Log.d(TAG, "0 cart types passed");
+				d = null;
+				break;
+			}
+			pauseEmulation(true);
+			String itm[] = new String[_cartTypes.length];
+			for (int i = 0; i < _cartTypes.length; itm[i] = _cartTypes[i][1], i++);
+			d = new AlertDialog.Builder(this)
+						.setTitle(R.string.selectcarttype)
+						.setCancelable(false)
+						.setItems(itm, new DialogInterface.OnClickListener() {
+							@Override
+							public void onClick(DialogInterface d, int i) {
+								NativeBootCartType(Integer.parseInt(_cartTypes[i][0]));
+								pauseEmulation(false);
+								removeDialog(DLG_SELCARTTYPE);
+							}
+							})
+						.setNegativeButton(R.string.cancel, new DialogInterface.OnClickListener() {
+							@Override
+							public void onClick(DialogInterface d, int i) {
+								pauseEmulation(false);
+								removeDialog(DLG_SELCARTTYPE);
 							}
 							})
 						.create();
@@ -229,10 +438,25 @@ public final class MainActivity extends Activity
 		return d;
 	}
 
+	@Override
+	protected void onPrepareDialog(int id, Dialog d) {
+		switch (id) {
+		case DLG_BRWSCONFRM:
+			((AlertDialog) d).setMessage(String.format(getString(R.string.confirmurl), NativeGetURL().trim()));
+			break;
+		}
+	}
+
+	private boolean validateURL(String u) {
+		if (u.trim().toLowerCase().startsWith("http://"))
+			return true;
+		return false;
+	}
+
 	private PackageInfo getPInfo() {
 		PackageInfo p;
 		try {
-			p = getPackageManager().getPackageInfo("name.nick.jubanka.atari800", 0);
+			p = getPackageManager().getPackageInfo("name.nick.jubanka.colleen", 0);
 		} catch (Exception e) {
 			Log.d(TAG, "Package not found");
 			p = null;
@@ -245,7 +469,8 @@ public final class MainActivity extends Activity
 			if (_audio != null)	_audio.interrupt();
 			_audio = new AudioThread(Integer.parseInt(_settings.get(n, "mixrate")),
 									 Boolean.parseBoolean(_settings.get(n, "sound16bit")) ?  2 : 1,
-									 Integer.parseInt(_settings.get(n, "mixbufsize")) * 10);
+									 Integer.parseInt(_settings.get(n, "mixbufsize")) * 10,
+									 Boolean.parseBoolean(_settings.get(n, "ntsc")));
 			_audio.start();
 		} else {
 			if (_audio != null)	_audio.interrupt();
@@ -267,6 +492,7 @@ public final class MainActivity extends Activity
 
 	@Override
 	public void onResume() {
+		_aBar.hide(this, true, true);
 		if (!_bootupconfig)	pauseEmulation(false);
 		super.onResume();
 	}
@@ -292,12 +518,14 @@ public final class MainActivity extends Activity
 
 	@Override
 	public void onOptionsMenuClosed(Menu m) {
+		_aBar.hide(this);
 		pauseEmulation(false);
 	}
 
 	@Override
 	public boolean onPrepareOptionsMenu(Menu menu) {
-		pauseEmulation(true);
+		if (!_aBar.isReal())
+			pauseEmulation(true);	// menu is always shown on > honeycomb
 		_imng.hideSoftInputFromWindow(_view.getWindowToken(), 0);
 		return true;
 	}
@@ -310,6 +538,7 @@ public final class MainActivity extends Activity
 			return true;
 		case R.id.menu_softkbd:
 			_imng.showSoftInput(_view, InputMethodManager.SHOW_FORCED);
+			_aBar.hide(this, false);
 			return true;
 		case R.id.menu_open:
 			startActivityForResult(new Intent(FileSelector.ACTION_OPEN_FILE, null, this, FileSelector.class),
@@ -317,6 +546,7 @@ public final class MainActivity extends Activity
 			return true;
 		case R.id.menu_nextdisk:
 			insertNextDisk();
+			_aBar.hide(this);
 			return true;
 		case R.id.menu_preferences:
 			startActivityForResult(new Intent(this, Preferences.class), ACTIVITY_PREFS);
@@ -328,6 +558,8 @@ public final class MainActivity extends Activity
 
 	@Override
 	protected void onActivityResult(int reqc, int resc, Intent data) {
+		_aBar.hide(this);
+
 		switch (reqc) {
 		case ACTIVITY_FSEL:
 			if (resc != RESULT_OK) {
@@ -344,11 +576,14 @@ public final class MainActivity extends Activity
 			}
 			_curDiskFname = data.getData().getPath();
 			if (data.getAction().equals(ACTION_INSERT_REBOOT)) {
-				NativeRunAtariProgram(_curDiskFname, 1, 1);
-				Toast.makeText(this, String.format(getString(R.string.diskboot),
-									_curDiskFname.substring(_curDiskFname.lastIndexOf("/") + 1)),
-							   Toast.LENGTH_SHORT)
-					 .show();
+				int r = NativeRunAtariProgram(_curDiskFname, 1, 1);
+				if (r == -2)
+					showDialog(DLG_SELCARTTYPE);
+				else
+					Toast.makeText(this, String.format(getString(r < 0 ? R.string.errorboot : R.string.diskboot),
+										_curDiskFname.substring(_curDiskFname.lastIndexOf("/") + 1)),
+								   Toast.LENGTH_SHORT)
+						 .show();
 			}
 			break;
 		case ACTIVITY_PREFS:
@@ -384,9 +619,11 @@ public final class MainActivity extends Activity
 				Log.d(TAG, "Trying loop " + f.getName());
 					if (f.exists()) {
 						_curDiskFname = f.getPath();
-						NativeRunAtariProgram(_curDiskFname, 1, 0);
+						int r = NativeRunAtariProgram(_curDiskFname, 1, 0);
 						Toast.makeText(this,
-									   String.format(getString(R.string.mountnextdisk), f.getName()),
+									   String.format(getString(
+											   r >= 0 ? R.string.mountnextdisk : R.string.mountnextdiskerror),
+										   f.getName()),
 									   Toast.LENGTH_SHORT)
 							 .show();
 						return;
@@ -401,7 +638,8 @@ public final class MainActivity extends Activity
 		Toast.makeText(this, R.string.mountnonextdisk, Toast.LENGTH_SHORT).show();
 	}
 
-	private native void NativeRunAtariProgram(String img, int drive, int reboot);
+	private native int NativeRunAtariProgram(String img, int drive, int reboot);
+	private native void NativeBootCartType(int kb);
 	private native void NativeExit();
 	private static native String NativeInit();
 
@@ -414,16 +652,21 @@ public final class MainActivity extends Activity
 			disk, sector, softjoy, up, down, left, right, fire, joyvisible, joysize,
 			joyopacity, joyrighth, joydeadband, joymidx, sound, mixrate, sound16bit,
 			hqpokey, mixbufsize, version, rompath, anchor, anchorstr, joygrace,
-			crophoriz, cropvert, derotkeys
+			crophoriz, cropvert, derotkeys, actiona, actionb, actionc, ntsc, paddle,
+			plandef, browser
 		};
 		private SharedPreferences _sharedprefs;
 		private Map<PreferenceName, String> _values, _newvalues;
 		private Context _context;
 
-		public Settings(SharedPreferences s, Context c) {
+		@SuppressWarnings("unchecked")
+		public Settings(SharedPreferences s, Context c, Object retain) {
 			_sharedprefs = s;
 			_context = c;
-			_values = new EnumMap<PreferenceName, String>(PreferenceName.class);
+			if (retain == null)
+				_values = new EnumMap<PreferenceName, String>(PreferenceName.class);
+			else
+				_values = (EnumMap<PreferenceName, String>) retain;
 			_newvalues = new EnumMap<PreferenceName, String>(PreferenceName.class);
 		}
 
@@ -448,19 +691,27 @@ public final class MainActivity extends Activity
 						   Integer.parseInt(_newvalues.get(PreferenceName.crophoriz)),
 						   Integer.parseInt(_newvalues.get(PreferenceName.cropvert)) );
 
-			if (changed(PreferenceName.machine)) {
-				if (!NativePrefMachine(Integer.parseInt(_newvalues.get(PreferenceName.machine)))) {
+			if ( changed(PreferenceName.machine) || changed(PreferenceName.ntsc) ) {
+				if ( !NativePrefMachine(Integer.parseInt(_newvalues.get(PreferenceName.machine)),
+										Boolean.parseBoolean(_newvalues.get(PreferenceName.ntsc))) ) {
 					Log.d(TAG, "OS rom not found");
-					Toast.makeText(_context, R.string.noromfound, Toast.LENGTH_LONG).show();
-					revertString(PreferenceName.machine);
-					NativePrefMachine(Integer.parseInt(_newvalues.get(PreferenceName.machine)));
+					if ( _values.get(PreferenceName.machine) != null &&
+						!_values.get(PreferenceName.machine).equals("false") ) {
+						Toast.makeText(_context, R.string.noromfoundrevert, Toast.LENGTH_LONG).show();
+						revertString(PreferenceName.machine);
+						NativePrefMachine(Integer.parseInt(_newvalues.get(PreferenceName.machine)),
+										  Boolean.parseBoolean(_newvalues.get(PreferenceName.ntsc)));
+					} else {
+						Toast.makeText(_context, R.string.noromfound, Toast.LENGTH_LONG).show();
+					}
 				}
 			}
 
 			NativePrefEmulation( Boolean.parseBoolean(_newvalues.get(PreferenceName.basic)),
 								 Boolean.parseBoolean(_newvalues.get(PreferenceName.speed)),
 								 Boolean.parseBoolean(_newvalues.get(PreferenceName.disk)),
-								 Boolean.parseBoolean(_newvalues.get(PreferenceName.sector)) );
+								 Boolean.parseBoolean(_newvalues.get(PreferenceName.sector)),
+								 Boolean.parseBoolean(_newvalues.get(PreferenceName.browser)) );
 
 			NativePrefSoftjoy( Boolean.parseBoolean(_newvalues.get(PreferenceName.softjoy)),
 							   Integer.parseInt(_newvalues.get(PreferenceName.up)),
@@ -468,7 +719,10 @@ public final class MainActivity extends Activity
 							   Integer.parseInt(_newvalues.get(PreferenceName.left)),
 							   Integer.parseInt(_newvalues.get(PreferenceName.right)),
 							   Integer.parseInt(_newvalues.get(PreferenceName.fire)),
-							   Integer.parseInt(_newvalues.get(PreferenceName.derotkeys)) );
+							   Integer.parseInt(_newvalues.get(PreferenceName.derotkeys)),
+				   			   new String[] { _newvalues.get(PreferenceName.actiona),
+											  _newvalues.get(PreferenceName.actionb),
+											  _newvalues.get(PreferenceName.actionc) } );
 
 			int x = 0, y = 0;
 			if (Boolean.parseBoolean(_newvalues.get(PreferenceName.anchor))) {
@@ -483,7 +737,7 @@ public final class MainActivity extends Activity
 				y = Integer.parseInt(tok[1]);
 			} else
 				putString("anchorstr", "false");
-			NativePrefOvl( Boolean.parseBoolean(_newvalues.get(PreferenceName.joyvisible)),
+			NativePrefJoy( Boolean.parseBoolean(_newvalues.get(PreferenceName.joyvisible)),
 						   Integer.parseInt(_newvalues.get(PreferenceName.joysize)),
 						   Integer.parseInt(_newvalues.get(PreferenceName.joyopacity)),
 						   Boolean.parseBoolean(_newvalues.get(PreferenceName.joyrighth)),
@@ -491,7 +745,9 @@ public final class MainActivity extends Activity
 						   Integer.parseInt(_newvalues.get(PreferenceName.joymidx)),
 						   Boolean.parseBoolean(_newvalues.get(PreferenceName.anchor)),
 						   x, y,
-						   Integer.parseInt(_newvalues.get(PreferenceName.joygrace)) );
+						   Integer.parseInt(_newvalues.get(PreferenceName.joygrace)),
+						   Boolean.parseBoolean(_newvalues.get(PreferenceName.paddle)),
+						   Boolean.parseBoolean(_newvalues.get(PreferenceName.plandef)) );
 
 			if ( changed(PreferenceName.mixrate) || changed(PreferenceName.sound16bit) ||
 				 changed(PreferenceName.hqpokey) )
@@ -547,6 +803,14 @@ public final class MainActivity extends Activity
 			commit();
 		}
 
+		public void testApply() {
+			boolean changed = false;
+			for (PreferenceName n: PreferenceName.values())
+				changed |= changed(n);
+			if (changed)
+				apply();
+		}
+
 		private boolean changed(PreferenceName p) {
 			String s1 = _values.get(p);
 			String s2 = _newvalues.get(p);
@@ -565,18 +829,24 @@ public final class MainActivity extends Activity
 			for (PreferenceName n: PreferenceName.values())
 				Log.d(TAG, n.toString() + "=" + _values.get(n));
 		}
+
+		public Map<PreferenceName, String> serialize() {
+			return _values;
+		}
 	}
 	private static native void NativePrefGfx(int aspect, boolean bilinear, int artifact,
 											 int frameskip, boolean collisions, int crophoriz, int cropvert);
-	private static native boolean NativePrefMachine(int machine);
+	private static native boolean NativePrefMachine(int machine, boolean ntsc);
 	private static native void NativePrefEmulation(boolean basic, boolean speed, boolean disk,
-												   boolean sector);
-	private static native void NativePrefSoftjoy(boolean softjoy, int up, int down, int left,
-												 int right, int fire, int derotkeys);
-	private static native void NativePrefOvl(boolean visible, int size, int opacity, boolean righth,
+												   boolean sector, boolean browser);
+	private static native void NativePrefSoftjoy(boolean softjoy, int up, int down, int left, int right,
+												 int fire, int derotkeys, String[] actions);
+	private static native void NativePrefJoy(boolean visible, int size, int opacity, boolean righth,
 											 int deadband, int midx, boolean anchor, int anchorx, int anchory,
-											 int grace);
+											 int grace, boolean paddle, boolean plandef);
 	private static native void NativePrefSound(int mixrate, boolean sound16bit, boolean hqpokey);
 	private static native boolean NativeSetROMPath(String path);
 	private static native String NativeGetJoypos();
+	private static native String NativeGetURL();
+	private static native void NativeClearDevB();
 }

@@ -22,7 +22,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-package name.nick.jubanka.atari800;
+package name.nick.jubanka.colleen;
 
 import java.io.File;
 import java.io.FileFilter;
@@ -53,6 +53,12 @@ import android.app.ProgressDialog;
 import android.os.AsyncTask;
 import android.app.Dialog;
 import android.widget.Toast;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
+import android.widget.SearchView;
+import android.text.TextUtils;
+import android.os.Build;
 
 
 public final class FileSelector extends ListActivity implements AdapterView.OnItemLongClickListener,
@@ -74,37 +80,81 @@ public final class FileSelector extends ListActivity implements AdapterView.OnIt
 	private boolean _pathsel = false;
 	private static String _mntfname = null;
 	private static String _drive1fname = null;
+	private SearchNull _srchView;
 
 	private final class IconArrayAdapter extends ArrayAdapter<String> {
+		LayoutInflater _inf = null;
 
 		public IconArrayAdapter(Context context, int textViewResourceId) {
 			super(context, textViewResourceId);
+			_inf = (LayoutInflater) getContext().getSystemService(Context.LAYOUT_INFLATER_SERVICE);
 		}
 
 		@Override
 		public View getView(int pos, View view, ViewGroup par) {
-			int dr;
+			if (view == null)
+				view = _inf.inflate(R.layout.file_selector_row, null);
+			String itm = getItem(pos);
+			((TextView) view.findViewById(R.id.fsel_text)).setText(itm);
+			((ImageView) view.findViewById(R.id.fsel_image)).setImageResource(
+				itm.endsWith("/") ? R.drawable.folder : 0 );
 
-			View v = view;
-			if (v == null) {
-				LayoutInflater inf = (LayoutInflater) getContext().
-									 getSystemService(Context.LAYOUT_INFLATER_SERVICE);
-				v = inf.inflate(R.layout.file_selector_row, null);
-			}
-			((TextView) v.findViewById(R.id.fsel_text)).setText(getItem(pos));
-			if (getItem(pos).endsWith("/"))
-				dr = R.drawable.folder;
+			return view;
+		}
+	}
+
+	private static class SearchNull {
+		public boolean onCreateOptionsMenu(Menu menu, ListActivity a)	{ return false; };
+		public void reset(ListActivity a)									{};
+	}
+
+	private static final class SearchHelp extends SearchNull implements SearchView.OnQueryTextListener {
+		ListActivity _actv;
+		private MenuItem _msrch = null;
+
+		@Override
+		public boolean onCreateOptionsMenu(Menu menu, ListActivity a) {
+			_actv = a;
+			MenuInflater inf = a.getMenuInflater();
+			inf.inflate(R.menu.fsel_menu, menu);
+			_msrch = menu.findItem(R.id.menu_search);
+			((SearchView) _msrch.getActionView()).setOnQueryTextListener(this);
+			return true;
+		};
+
+		@Override
+		public boolean onQueryTextChange(String newText) {
+			if (TextUtils.isEmpty(newText))
+				_actv.getListView().clearTextFilter();
 			else
-				dr = 0;
-			((ImageView) v.findViewById(R.id.fsel_image)).setImageResource(dr);
+				_actv.getListView().setFilterText(newText.toString());
+			return true;
+		}
 
-			return v;
+		@Override
+		public boolean onQueryTextSubmit(String query) {
+			return true;
+		}
+
+		@Override
+		public void reset(ListActivity a) {
+			a.getListView().clearTextFilter();
+			if (_msrch != null)
+				if (Integer.parseInt(Build.VERSION.SDK) >= Build.VERSION_CODES.ICE_CREAM_SANDWICH)
+					_msrch.collapseActionView();
+				else
+					((SearchView) _msrch.getActionView()).setIconified(true);
 		}
 	}
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
+
+		if (Integer.parseInt(Build.VERSION.SDK) >= Build.VERSION_CODES.HONEYCOMB)
+			_srchView = new SearchHelp();
+		else
+			_srchView = new SearchNull();
 
 		ListView lv = getListView();
 		_pathsel = getIntent().getAction().equals(ACTION_OPEN_PATH);
@@ -150,13 +200,14 @@ public final class FileSelector extends ListActivity implements AdapterView.OnIt
 
 	@Override
 	public Object onRetainNonConfigurationInstance() {
-		Object ret = null;
+		String[] ret = null;
 		if (_task == null && _ad != null && _ad.getCount() > 0) {
-			ret = new String[_ad.getCount()];
-			for (int i = 0; i < _ad.getCount(); i++)
-				((String[]) ret)[i] = _ad.getItem(i);
+			int cnt = _ad.getCount();
+			ret = new String[cnt];
+			for (int i = 0; i < cnt; i++)
+				ret[i] = _ad.getItem(i);
 		}
-		return ret;
+		return (Object) ret;
 	}
 
 	@Override
@@ -279,6 +330,11 @@ public final class FileSelector extends ListActivity implements AdapterView.OnIt
 	}
 
 	@Override
+	public boolean onCreateOptionsMenu(Menu menu) {
+		return _srchView.onCreateOptionsMenu(menu, this);
+	}
+
+	@Override
 	public void finish() {
 		if (!_pathsel) {
 			if (_drive1fname != null) {
@@ -291,6 +347,7 @@ public final class FileSelector extends ListActivity implements AdapterView.OnIt
 
 	private void listDirectory(File dir, int pos, Object retain) {
 		if (_ad != null)	_ad.clear();
+		_srchView.reset(this);
 		setTitle(getString(_pathsel ? R.string.fsel_opendir : R.string.fsel_openfile)
 							+ " " + dir.getAbsolutePath());
 		_curdir = dir;
@@ -341,7 +398,7 @@ public final class FileSelector extends ListActivity implements AdapterView.OnIt
 		protected IconArrayAdapter doInBackground(File... files) {
 			IconArrayAdapter flst = new IconArrayAdapter(FileSelector.this, R.layout.file_selector_row);
 			File dir = files[0];
-			if (!dir.equals(Environment.getExternalStorageDirectory()))
+			if (!dir.toString().equals("/"))
 				flst.add("../");
 
 			File[] lst = dir.listFiles(new FileFilter() {
@@ -377,7 +434,7 @@ public final class FileSelector extends ListActivity implements AdapterView.OnIt
 
 
 	private native boolean NativeIsDisk(String img);
-	private native void NativeRunAtariProgram(String img, int drive, int reboot);
+	private native int NativeRunAtariProgram(String img, int drive, int reboot);
 	private native String[] NativeGetDrvFnames();
 	private native void NativeUnmountAll();
 

@@ -71,7 +71,7 @@
 #include "xep80.h"
 #endif
 
-#define SAVE_VERSION_NUMBER 6
+#define SAVE_VERSION_NUMBER 7 /* Last changed after Atari800 2.2.1 */
 
 #if defined(MEMCOMPR)
 static gzFile *mem_open(const char *name, const char *mode);
@@ -453,22 +453,22 @@ int StateSav_ReadAtariState(const char *filename, const char *mode)
 		return FALSE;
 	}
 
-	if (StateVersion != SAVE_VERSION_NUMBER && StateVersion < 3) {
+	if (StateVersion > SAVE_VERSION_NUMBER || StateVersion < 3) {
 		Log_print("Cannot read this state file because it is an incompatible version.");
 		GZCLOSE(StateFile);
 		StateFile = NULL;
 		return FALSE;
 	}
 
-	Atari800_StateRead();
+	Atari800_StateRead(StateVersion);
 	if (StateVersion >= 4) {
-		CARTRIDGE_StateRead();
+		CARTRIDGE_StateRead(StateVersion);
 		SIO_StateRead();
 	}
 	ANTIC_StateRead();
 	CPU_StateRead(SaveVerbose, StateVersion);
-	GTIA_StateRead();
-	PIA_StateRead();
+	GTIA_StateRead(StateVersion);
+	PIA_StateRead(StateVersion);
 	POKEY_StateRead();
 	if (StateVersion >= 6) {
 #ifdef XEP80_EMULATION

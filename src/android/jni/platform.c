@@ -25,18 +25,21 @@
 #include "atari.h"
 #include "cpu.h"
 #include "input.h"
+#include "devices.h"
 
 #include "graphics.h"
 #include "androidinput.h"
-#include "jni.h"
 
 int PLATFORM_Initialise(int *argc, char *argv[])
 {
 	/* Android_InitGraphics() is deferred until GL surface is created */
-	/* Sound_Initilise() not needed */
+	/* Sound_Initialise() not needed */
 	Log_print("Core init");
 
 	Input_Initialize();
+
+	Devices_enable_h_patch = FALSE;
+	INPUT_direct_mouse = TRUE;
 
 	return TRUE;
 }
@@ -55,12 +58,10 @@ int PLATFORM_Exit(int run_monitor)
 	return FALSE;
 }
 
-
 int PLATFORM_Keyboard(void)
 {
 	return Keyboard_Dequeue();
 }
-
 
 void PLATFORM_DisplayScreen(void)
 {

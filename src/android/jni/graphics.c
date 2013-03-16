@@ -33,7 +33,6 @@
 #include "akey.h"
 #include "cpu.h"
 
-#include "jni.h"
 #include "androidinput.h"
 #include "graphics.h"
 
@@ -44,6 +43,8 @@
 #define OPACITY_STEP   0.02f
 #define OPACITY_FRMSTR 75
 
+#define BORDER_PCT 0.05f
+
 int Android_ScreenW = 0;
 int Android_ScreenH = 0;
 int Android_Aspect;
@@ -52,6 +53,10 @@ static struct RECT screenrect;
 static int screenclear;
 int Android_Bilinear;
 float Android_Joyscale = 0.15f;
+
+extern int *ovl_texpix;
+extern int ovl_texw;
+extern int ovl_texh;
 
 /* graphics conversion */
 static UWORD *palette = NULL;
@@ -66,11 +71,19 @@ enum {
 static GLuint texture[TEX_MAXNAMES];
 static UWORD conkey_vrt[CONK_VERT_MAX];
 static int conkey_lbl[CONK_VERT_MAX >> 2];
-
+static UWORD conkey_shadow[2 * 4];
 
 void Android_PaletteUpdate(void)
 {
 	int i;
+
+	if (!palette) {
+		if ( !(palette = malloc(256 * sizeof(UWORD))) ) {
+			Log_print("Cannot allocate memory for palette conversion.");
+			return;
+		}
+	}
+	memset(palette, 0, 256 * sizeof(UWORD));
 
 	for (i = 0; i < 256; i++)
 		palette[i] = ( (Colours_GetR(i) & 0xf8) << 8 ) |
@@ -85,6 +98,7 @@ int Android_InitGraphics(void)
 	const UWORD poly[] = { 0,16, 24,16, 32,0, 8,0 };
 	int i, tmp, w, h;
 	float tmp2, tmp3;
+	struct RECT *r;
 
 	/* Allocate stuff */
 	if (!hicolor_screen) {
@@ -94,13 +108,6 @@ int Android_InitGraphics(void)
 		}
 	}
 	memset(hicolor_screen, 0, TEXTURE_WIDTH * TEXTURE_HEIGHT * sizeof(UWORD));
-	if (!palette) {
-		if ( !(palette = malloc(256 * sizeof(UWORD))) ) {
-			Log_print("Cannot allocate memory for palette conversion.");
-			return FALSE;
-		}
-	}
-	memset(palette, 0, 256 * sizeof(UWORD));
 
 	/* Setup GL */
 	glEnable(GL_TEXTURE_2D);
@@ -172,6 +179,15 @@ int Android_InitGraphics(void)
 	AndroidInput_ConOvl.bbox.t = conkey_vrt[CONK_VERT_MAX - 3];
 	AndroidInput_ConOvl.hotlen = 0.1f *
 			(Android_ScreenW < Android_ScreenH ? Android_ScreenW : Android_ScreenH);
+	r = &(AndroidInput_ConOvl.bbox);
+	conkey_shadow[0] = r->l - COVL_SHADOW_OFF;
+	conkey_shadow[1] = r->b + COVL_SHADOW_OFF;
+	conkey_shadow[2] = r->r;
+	conkey_shadow[3] = r->b + COVL_SHADOW_OFF;
+	conkey_shadow[4] = r->r;
+	conkey_shadow[5] = r->t - COVL_SHADOW_OFF;
+	conkey_shadow[6] = r->l - COVL_SHADOW_OFF;
+	conkey_shadow[7] = r->t - COVL_SHADOW_OFF;
 
 	/* Scale joystick overlays */
 	Joyovl_Scale();
@@ -194,7 +210,13 @@ int Android_InitGraphics(void)
 		/* center */
 		tmp = (Android_ScreenW - screenrect.r + 1) / 2;
 		screenrect.l += tmp;
-		tmp = (Android_ScreenH - screenrect.b + 1) / 2;
+		h = Android_ScreenH;
+		if (Android_ScreenH > Android_ScreenW)
+			h >>= 1;	/* assume keyboard takes up half the height in portrait */
+		tmp = (h - screenrect.b + 1) / 2;
+		if (tmp < 0)
+			tmp = 0;
+		tmp = (Android_ScreenH - h) + tmp;
 		screenrect.t += tmp;
 		screenclear = TRUE;
 	} else {
@@ -216,8 +238,20 @@ void Joyovl_Scale(void)
 
 	tmp = ( (Android_ScreenW > Android_ScreenH) ?
 			 Android_ScreenW : Android_ScreenH ) * Android_Joyscale;
-	AndroidInput_JoyOvl.joyarea.r = AndroidInput_JoyOvl.joyarea.l + tmp;
-	AndroidInput_JoyOvl.joyarea.b = AndroidInput_JoyOvl.joyarea.t + tmp;
+	if (!Android_Paddle) {
+		AndroidInput_JoyOvl.joyarea.r = AndroidInput_JoyOvl.joyarea.l + tmp;
+		AndroidInput_JoyOvl.joyarea.b = AndroidInput_JoyOvl.joyarea.t + tmp;
+	} else {
+		if (!Android_PlanetaryDefense) {
+			AndroidInput_JoyOvl.joyarea.l = Android_Joyleft ? BORDER_PCT * Android_ScreenW : Android_Split;
+			AndroidInput_JoyOvl.joyarea.r = Android_Joyleft ? Android_Split : (1.0f - BORDER_PCT) * Android_ScreenW;
+			AndroidInput_JoyOvl.joyarea.b = AndroidInput_JoyOvl.joyarea.t + 8 + (tmp >> 3);
+		} else {
+		AndroidInput_JoyOvl.joyarea.l = AndroidInput_JoyOvl.joyarea.t = 0;
+		AndroidInput_JoyOvl.joyarea.r = Android_ScreenW;
+		AndroidInput_JoyOvl.joyarea.b = Android_ScreenH;
+		}
+	}
 	AndroidInput_JoyOvl.firewid = tmp >> 3;
 }
 
@@ -312,7 +346,7 @@ void Android_Render(void)
 	if (glGetError() != GL_NO_ERROR) Log_print("OpenGL error at joy area");
 
 	/* stick */
-	if (AndroidInput_JoyOvl.stickopacity >= 0.05f) {
+	if (AndroidInput_JoyOvl.stickopacity >= OPACITY_CUTOFF) {
 		glColor4f(1.0f, 1.0f, 1.0f, AndroidInput_JoyOvl.stickopacity);
 		glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_CROP_RECT_OES, crop_fire);
 		p = &AndroidInput_JoyOvl.joystick;
@@ -322,7 +356,7 @@ void Android_Render(void)
 	}
 
 	/* fire */
-	if (AndroidInput_JoyOvl.fireopacity >= 0.05f) {
+	if (AndroidInput_JoyOvl.fireopacity >= OPACITY_CUTOFF) {
 		glColor4f(1.0f, 1.0f, 1.0f, AndroidInput_JoyOvl.fireopacity);
 		glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_CROP_RECT_OES, crop_fire);
 		p = &AndroidInput_JoyOvl.fire;
@@ -337,12 +371,12 @@ void Android_Render(void)
 
 	/* console keys */
 ck:	if (AndroidInput_ConOvl.ovl_visible) {
-		glColor4f(1.0f, 1.0f, 1.0f, AndroidInput_ConOvl.opacity);
-		for (i = 0; i < CONK_VERT_MAX >> 2; i += 2) {
-			glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_CROP_RECT_OES, crop_lbl[i >> 1]);
-			glDrawTexiOES(conkey_lbl[i], conkey_lbl[i + 1], 0, 40, 9);
-		}
 		glDisable(GL_TEXTURE_2D);	/* disable texturing */
+
+		glColor4f(0.0f, 0.0f, 0.0f, AndroidInput_ConOvl.opacity * 0.7);
+		glVertexPointer(2, GL_SHORT, 0, conkey_shadow);
+		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
 		glColor4f(0.5f, 0.9f, 1.0f, AndroidInput_ConOvl.opacity);
 		glVertexPointer(2, GL_SHORT, 0, conkey_vrt);
 		for (i = 0; i < (CONK_VERT_MAX >> 1); i += 4)
@@ -352,11 +386,16 @@ ck:	if (AndroidInput_ConOvl.ovl_visible) {
 			glDrawArrays(GL_TRIANGLE_FAN, AndroidInput_ConOvl.hitkey << 2, 4);
 		}
 		glEnable(GL_TEXTURE_2D);	/* enable texturing */
+
+		glColor4f(1.0f, 1.0f, 1.0f, AndroidInput_ConOvl.opacity);
+		for (i = 0; i < CONK_VERT_MAX >> 2; i += 2) {
+			glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_CROP_RECT_OES, crop_lbl[i >> 1]);
+			glDrawTexiOES(conkey_lbl[i], conkey_lbl[i + 1], 0, 40, 9);
+		}
 		if (glGetError() != GL_NO_ERROR) Log_print("OpenGL error at console overlay");
 	}
 
 	glDisable(GL_BLEND);		/* disable blending */
-
 }
 
 void Update_Overlays(void)

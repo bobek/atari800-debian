@@ -32,7 +32,7 @@ build-stamp:
 bld-sdl:
 	cd src ; if [ -e Makefile ]; then $(MAKE) clean; fi
 	cd src ; ./configure \
-		 --target=sdl
+		 --with-video=sdl --with-sound=sdl
 	cd src ; $(MAKE)
 
 # Clean up after a build and before building a source package

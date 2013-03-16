@@ -27,12 +27,14 @@
 
 #include "input.h"
 #include "akey.h"
+#include "pokey.h"
 
 #include "graphics.h"
 #include "androidinput.h"
 #include "keys.inc"
 
 #define HIT_OPACITY 0.6f
+#define POTLIMIT 228
 
 #define KBD_MAXKEYS (1 << 4)
 #define KBD_MASK    (KBD_MAXKEYS - 1)
@@ -54,9 +56,15 @@ enum
 static struct touchstate prevtc[MAXPOINTERS];
 static int prevconptr;
 
-int Android_Joyleft = 1;
+int Android_Joyleft = TRUE;
 float Android_Splitpct = 0.5f;
 int Android_Split;
+
+int Android_Paddle = FALSE;
+SWORD Android_POTX = 0;
+SWORD Android_POTY = 0;
+int Android_PlanetaryDefense = FALSE;
+UBYTE Android_ReversePddle = 0;
 
 struct joy_overlay_state AndroidInput_JoyOvl;
 struct consolekey_overlay_state AndroidInput_ConOvl;
@@ -69,18 +77,26 @@ static int Android_key_control;
 static pthread_mutex_t key_mutex = PTHREAD_MUTEX_INITIALIZER;
 static key_last = AKEY_NONE;
 
-UBYTE softjoymap[SOFTJOY_MAXKEYS][2] =
+static const int derot_lut[2][4] =
 {
-	{ KEY_LEFT,  INPUT_STICK_LEFT    },
-	{ KEY_RIGHT, INPUT_STICK_RIGHT   },
-	{ KEY_UP,    INPUT_STICK_FORWARD },
-	{ KEY_DOWN,  INPUT_STICK_BACK    },
-	{ '2',       0                   }
+	{ KEY_RIGHT, KEY_LEFT, KEY_UP, KEY_DOWN },	/* derot left */
+	{ KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP }	/* derot right */
 };
-int Android_SoftjoyEnable = 1;
+UBYTE softjoymap[SOFTJOY_MAXKEYS + SOFTJOY_MAXACTIONS][2] =
+{
+	{ KEY_LEFT,  	INPUT_STICK_LEFT    },
+	{ KEY_RIGHT, 	INPUT_STICK_RIGHT   },
+	{ KEY_UP,    	INPUT_STICK_FORWARD },
+	{ KEY_DOWN,  	INPUT_STICK_BACK    },
+	{ '2',       	0                   },
+	{ ACTION_NONE,	AKEY_NONE			},
+	{ ACTION_NONE,	AKEY_NONE			},
+	{ ACTION_NONE,	AKEY_NONE			}
+};
+int Android_SoftjoyEnable = TRUE;
 int Android_DerotateKeys = 0;
 
-void Android_TouchEvent(int x1, int y1, int s1, int x2, int y2, int s2)
+int Android_TouchEvent(int x1, int y1, int s1, int x2, int y2, int s2)
 {
 	int joyptr;		/* will point to joystick touch of input set */
 	int tmpfire;	/* flag: both pointers on fire side */
@@ -91,7 +107,8 @@ void Android_TouchEvent(int x1, int y1, int s1, int x2, int y2, int s2)
 	struct consolekey_overlay_state *covl;
 	int conptr;		/* will point to stolen ptr, PTRSTL otherwise */
 	int i;
-	float a;
+	float a, potx, poty;
+	int ret = 0;
 
 	jovl = &AndroidInput_JoyOvl;
 	covl = &AndroidInput_ConOvl;
@@ -119,6 +136,9 @@ void Android_TouchEvent(int x1, int y1, int s1, int x2, int y2, int s2)
 		newtc[PTRJOY].x = x1; newtc[PTRJOY].y = y1; newtc[PTRJOY].s = s1; 
 		newtc[PTRTRG].x = x2; newtc[PTRTRG].y = y2; newtc[PTRTRG].s = s2; 
 	}
+
+	if (newtc[PTRJOY].s || newtc[PTRTRG].s)
+		ret = 1;
 
 	/* console keys */
 	conptr = PTRSTL;
@@ -188,21 +208,68 @@ void Android_TouchEvent(int x1, int y1, int s1, int x2, int y2, int s2)
 		covl->ovl_visible = COVL_FADEIN;
 		conptr = PTRTRG;
 	}
+	if (conptr == PTRSTL)
+		if (newtc[PTRJOY].s && 
+				( (!prevtc[PTRJOY].s && newtc[PTRJOY].y < covl->hotlen) ||	/* menu area */
+				  prevconptr != PTRSTL) &&								   /* still held */
+				!(covl->ovl_visible != COVL_HIDDEN &&
+				  newtc[PTRJOY].x >= covl->bbox.l - COVL_SHADOW_OFF &&	 /* outside bbox */
+				  newtc[PTRJOY].y <= covl->bbox.b + COVL_SHADOW_OFF) ) {
+			conptr = PTRJOY;										/* touched menu area */
+			ret = 2;
+		} else if (newtc[PTRTRG].s &&
+					( (!prevtc[PTRTRG].s && newtc[PTRTRG].y < covl->hotlen) ||
+					  prevconptr != PTRSTL) &&
+					!(covl->ovl_visible != COVL_HIDDEN &&
+					  newtc[PTRTRG].x >= covl->bbox.l - COVL_SHADOW_OFF &&
+					  newtc[PTRTRG].y <= covl->bbox.b + COVL_SHADOW_OFF) ) {
+			conptr = PTRTRG;
+			ret = 2;
+		}
 
 	/* joystick */
 	newjoy = INPUT_STICK_CENTRE;
 	if (newtc[PTRJOY].s && conptr != PTRJOY) {
-		dx2 = (jovl->joyarea.r - jovl->joyarea.l) >> 1;
-		dy2 = (jovl->joyarea.b - jovl->joyarea.t) >> 1;
-		dx  = dx2 - dx2 * jovl->deadarea;
-		dy  = dy2 - dy2 * jovl->deadarea;
-		dx2 = (jovl->joyarea.r - jovl->joyarea.l) * jovl->gracearea;
+		if (!Android_Paddle) {
+			dx2 = (jovl->joyarea.r - jovl->joyarea.l) >> 1;
+			dy2 = (jovl->joyarea.b - jovl->joyarea.t) >> 1;
+			dx  = dx2 - dx2 * jovl->deadarea;
+			dy  = dy2 - dy2 * jovl->deadarea;
+			dx2 = (jovl->joyarea.r - jovl->joyarea.l) * jovl->gracearea;
+		}
+		if (Android_Paddle) {
+			potx = ((float) (newtc[PTRJOY].x - jovl->joyarea.l)) /
+				   ((float) (jovl->joyarea.r - jovl->joyarea.l));
+			poty = (float) newtc[PTRJOY].y / (float) Android_ScreenH;
+			Android_POTX = POTLIMIT - (UBYTE) (potx * ((float) POTLIMIT) + 0.5f);
+			Android_POTY = POTLIMIT - (UBYTE) (poty * ((float) POTLIMIT) + 0.5f);
+			if (Android_ReversePddle & 1)
+				Android_POTX = POTLIMIT - Android_POTX;
+			if (Android_ReversePddle & 2)
+				Android_POTY = POTLIMIT - Android_POTY;
+			if (Android_POTX < 0)	Android_POTX = 0;
+			if (Android_POTY < 0)	Android_POTY = 0;
+			if (Android_POTX > POTLIMIT)	Android_POTX = POTLIMIT;
+			if (Android_POTY > POTLIMIT)	Android_POTY = POTLIMIT;
 
-		if ( (newtc[PTRJOY].x >= jovl->joyarea.l - dx2 &&
-			  newtc[PTRJOY].x <= jovl->joyarea.r + dx2 &&
-			  newtc[PTRJOY].y >= jovl->joyarea.t - dx2 &&
-			  newtc[PTRJOY].y <= jovl->joyarea.b + dx2) ||
-			 jovl->anchor ) {
+			jovl->joystick.x = newtc[PTRJOY].x;
+			jovl->joystick.y = newtc[PTRJOY].y;
+			jovl->stickopacity = HIT_OPACITY;
+			if (!jovl->anchor) {
+				dy = (jovl->joyarea.b - jovl->joyarea.t) >> 1;
+				if (newtc[PTRJOY].y - dy < 0)    newtc[PTRJOY].y -= newtc[PTRJOY].y - dy;
+				if (newtc[PTRJOY].y + dy > Android_ScreenH)
+					newtc[PTRJOY].y -= newtc[PTRJOY].y + dy - Android_ScreenH;
+				jovl->joyarea.t = newtc[PTRJOY].y - dy;
+				jovl->joyarea.b = newtc[PTRJOY].y + dy;
+				jovl->areaopacitycur = jovl->areaopacityset;
+				jovl->areaopacityfrm = 0;
+			}
+		} else if ( (newtc[PTRJOY].x >= jovl->joyarea.l - dx2 &&
+					 newtc[PTRJOY].x <= jovl->joyarea.r + dx2 &&
+					 newtc[PTRJOY].y >= jovl->joyarea.t - dx2 &&
+					 newtc[PTRJOY].y <= jovl->joyarea.b + dx2) ||
+					jovl->anchor ) {
 
 			if (newtc[PTRJOY].x <= jovl->joyarea.l + dx) {
 				newjoy &= INPUT_STICK_LEFT;
@@ -293,8 +360,8 @@ void Android_TouchEvent(int x1, int y1, int s1, int x2, int y2, int s2)
 					newtc[PTRJOY].y -= newtc[PTRJOY].y + dy - Android_ScreenH;
 				jovl->joyarea.l = newtc[PTRJOY].x - dx;
 				jovl->joyarea.r = newtc[PTRJOY].x + dx;
-				jovl->joyarea.t = newtc[PTRJOY].y - dx;
-				jovl->joyarea.b = newtc[PTRJOY].y + dx;
+				jovl->joyarea.t = newtc[PTRJOY].y - dy;
+				jovl->joyarea.b = newtc[PTRJOY].y + dy;
 			}
 			jovl->areaopacitycur = jovl->areaopacityset;
 			jovl->areaopacityfrm = 0;
@@ -303,23 +370,33 @@ void Android_TouchEvent(int x1, int y1, int s1, int x2, int y2, int s2)
 
 	/* trigger */
 	newtrig = 1;
-	if (newtc[PTRTRG].s && conptr != PTRTRG) {
+	if ( (newtc[PTRTRG].s && conptr != PTRTRG) ||	/* normal trigger */
+		 (newtc[PTRJOY].s && conptr != PTRJOY && Android_PlanetaryDefense) ) {
 		newtrig = 0;
 		jovl->fire.x = newtc[PTRTRG].x;
 		jovl->fire.y = newtc[PTRTRG].y;
 		jovl->fireopacity = HIT_OPACITY;
 	}
 
-	Android_PortStatus = 0xFFF0 | newjoy;	/* thread unsafe => "no" problem */
-	Android_TrigStatus = 0xE | newtrig;
+	/* thread unsafe => "no" problem */
+	if (!Android_Paddle){
+		Android_PortStatus = 0xFFF0 | newjoy;
+		Android_TrigStatus = 0xE | newtrig;
+	} else {
+		POKEY_POT_input[INPUT_mouse_port << 1] = Android_POTX;
+		POKEY_POT_input[(INPUT_mouse_port << 1) + 1] = Android_POTY;
+		INPUT_mouse_buttons = !newtrig;
+	}
 
-	memcpy(prevtc, newtc, sizeof(struct touchstate));
+	memcpy(prevtc, newtc, sizeof(struct touchstate) * MAXPOINTERS);
 	prevconptr = conptr;
+
+	return ret;
 }
 
 void Android_KeyEvent(int k, int s)
 {
-	int i;
+	int i, shft;
 
 	if (Android_SoftjoyEnable) {
 		for (i = 0; i < 4; i++)
@@ -334,43 +411,15 @@ void Android_KeyEvent(int k, int s)
 			Android_TrigStatus = Android_TrigStatus & (~(s != 0)) | (s == 0);
 			return;
 		}
+		for (i = SOFTJOY_ACTIONBASE; i < SOFTJOY_MAXKEYS + SOFTJOY_MAXACTIONS; i++)
+			if (softjoymap[i][0] == k && softjoymap[i][1] != AKEY_NONE) {
+				k = softjoymap[i][1];
+				break;
+			}
 	}
 
-	switch (Android_DerotateKeys) {
-	case 1:		/* derotate left */
-		switch (k) {
-		case KEY_UP:
-			k = KEY_RIGHT;
-			break;
-		case KEY_DOWN:
-			k = KEY_LEFT;
-			break;
-		case KEY_LEFT:
-			k = KEY_UP;
-			break;
-		case KEY_RIGHT:
-			k = KEY_DOWN;
-			break;
-		}
-		break;
-
-	case 2:		/* derotate right */
-		switch (k) {
-		case KEY_UP:
-			k = KEY_LEFT;
-			break;
-		case KEY_DOWN:
-			k = KEY_RIGHT;
-			break;
-		case KEY_LEFT:
-			k = KEY_DOWN;
-			break;
-		case KEY_RIGHT:
-			k = KEY_UP;
-			break;
-		}
-		break;
-	}
+	if (Android_DerotateKeys && k <= KEY_UP && k >= KEY_RIGHT)
+		k = derot_lut[Android_DerotateKeys - 1][KEY_UP - k];
 
 	switch (k) {
 	case KEY_SHIFT:
@@ -385,8 +434,13 @@ void Android_KeyEvent(int k, int s)
 	default:
 		if (k >= STATIC_MAXKEYS)
 			Log_print("Unmappable key %d", k);
-		else
-			Keyboard_Enqueue( (s) ? (skeyxlat[k] | Android_key_control | INPUT_key_shift) : AKEY_NONE );
+		else {
+			if (k == '+' || k == '<' || k == '>' || k == '*')
+				shft = 0;
+			else
+				shft == INPUT_key_shift;
+			Keyboard_Enqueue( (s) ? (skeyxlat[k] | Android_key_control | shft) : AKEY_NONE );
+		}
 	}
 }
 

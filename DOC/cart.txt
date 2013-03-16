@@ -35,7 +35,7 @@ Currently supported cartridge types:
 |----+-----------+------+---------------------------------------------------+
 |  1 | 800/XL/XE |    8 | Standard 8 KB cartridge                           |
 |  2 | 800/XL/XE |   16 | Standard 16 KB cartridge                          |
-|  3 | 800/XL/XE |   16 | OSS '034M' 16 KB cartridge                        |
+|  3 | 800/XL/XE |   16 | OSS two chip 16 KB cartridge (034M)               |
 |  4 |   5200    |   32 | Standard 32 KB 5200 cartridge                     |
 |  5 | 800/XL/XE |   32 | DB 32 KB cartridge                                |
 |  6 |   5200    |   16 | Two chip 16 KB 5200 cartridge                     |
@@ -43,11 +43,11 @@ Currently supported cartridge types:
 |  8 | 800/XL/XE |   64 | 64 KB Williams cartridge                          |
 |  9 | 800/XL/XE |   64 | Express 64 KB cartridge                           |
 | 10 | 800/XL/XE |   64 | Diamond 64 KB cartridge                           |
-| 11 | 800/XL/XE |   64 | SpartaDos X 64 KB cartridge                       |
+| 11 | 800/XL/XE |   64 | SpartaDOS X 64 KB cartridge                       |
 | 12 | 800/XL/XE |   32 | XEGS 32 KB cartridge                              |
 | 13 | 800/XL/XE |   64 | XEGS 64 KB cartridge                              |
 | 14 | 800/XL/XE |  128 | XEGS 128 KB cartridge                             |
-| 15 | 800/XL/XE |   16 | OSS 'M091' 16 KB cartridge                        |
+| 15 | 800/XL/XE |   16 | OSS one chip 16 KB cartridge                      |
 | 16 |   5200    |   16 | One chip 16 KB 5200 cartridge                     |
 | 17 | 800/XL/XE |  128 | Atrax 128 KB cartridge                            |
 | 18 | 800/XL/XE |   40 | Bounty Bob Strikes Back 40 KB cartridge           |
@@ -75,7 +75,23 @@ Currently supported cartridge types:
 | 40 | 800/XL/XE |   16 | Blizzard 16 KB cartridge                          |
 | 41 | 800/XL/XE |  128 | Atarimax 128 KB Flash cartridge                   |
 | 42 | 800/XL/XE | 1024 | Atarimax 1 MB Flash cartridge                     |
-| 43 | 800/XL/XE |  128 | SpartaDos X 128 KB cartridge                      |
+| 43 | 800/XL/XE |  128 | SpartaDOS X 128 KB cartridge                      |
+| 44 | 800/XL/XE |    8 | OSS 8 KB cartridge                                |
+| 45 | 800/XL/XE |   16 | OSS two chip 16 KB cartridge (043M)               |
+| 46 | 800/XL/XE |    4 | Blizzard 4 KB cartridge                           |
+| 47 | 800/XL/XE |   32 | AST 32 KB cartridge                               |
+| 48 | 800/XL/XE |   64 | Atrax SDX 64 KB cartridge                         |
+| 49 | 800/XL/XE |  128 | Atrax SDX 128 KB cartridge                        |
+| 50 | 800/XL/XE |   64 | Turbosoft 64 KB cartridge                         |
+| 51 | 800/XL/XE |  128 | Turbosoft 128 KB cartridge                        |
+| 52 | 800/XL/XE |   32 | Ultracart 32 KB cartridge                         |
+| 53 | 800/XL/XE |    8 | Low bank 8 KB cartridge                           |
+| 54 | 800/XL/XE |  128 | SIC! 128 KB cartridge                             |
+| 55 | 800/XL/XE |  256 | SIC! 256 KB cartridge                             |
+| 56 | 800/XL/XE |  512 | SIC! 512 KB cartridge                             |
+| 57 | 800/XL/XE |    2 | Standard 2 KB cartridge                           |
+| 58 | 800/XL/XE |    4 | Standard 4 KB cartridge                           |
+| 59 |    800    |    4 | Right slot 4 KB cartridge                         |
 +----+-----------+------+---------------------------------------------------+
 
 Id is the cartridge type code stored in the CART file.
@@ -103,25 +119,29 @@ are numbered in the order they appear in the image file, starting with 0.
  $8000 and $BFFF.
 
 +---------------------------------------------------------------------------+
-| Type 3: OSS '034M' 16 KB cartridge                                        |
+| Type 3: OSS two chip 16 KB cartridge (034M)                               |
 +---------------------------------------------------------------------------+
 
- There are two types of OSS cartridges. Both are 16 KB and occupy 8 KB
- of address space between $A000 and $BFFF. The cartridge memory is divided
- into 4 banks, 4 KB each. One bank ('main') is always mapped to $B000-$BFFF.
- The other 3 banks are mapped to $A000-$AFFF. The current bank is selected
- by accessing a byte in $D500-$D5FF. Only 4 lowest bits of address are
- significant.
+ NOTE: This cartridge image format has been obsoleted by Type 45 because its
+ order of banks is incorrect (i.e. the order in a physical cartridge's ROM
+ chips is different). This format is still supported by the CART file format
+ for backward compatibility.
 
- The '034M' scheme is the more complicated one.
- The main bank is 3. An access to:
- $D5x0 or $D5x1 selects bank 0.
- $D5x3 or $D5x7 selects bank 1.
- $D5x4 or $D5x5 selects bank 2.
- $D5x2 or $D5x6 is not useful. It disables ROM (there are $FF bytes
- in $A000-$AFFF).
- $D5x8-$D5xF disables whole cartridge (enables computer's memory in address
- space between $A000 and $BFFF).
+ The cartridge occupies 8 KB of address space between $A000 and $BFFF. Its
+ memory is divided into 4 banks, 4 KB each. Bank number 3 (the last one) is
+ always mapped to $B000-$BFFF. Bank in $A000-$AFFF is selected by an access to
+ $D500-$D5FF. Only 4 lowest bits of address are significant:
+ - $D5x0 selects bank 0.
+ - $D5x1 is not useful - it selects banks 0 and 1 (the bytes are binary AND of
+   the corresponding bytes from banks 0 and 1).
+ - $D5x3 or $D5x7 selects bank 1.
+ - $D5x4 selects bank 2.
+ - $D5x5 is not useful - it selects banks 1 and 2 (the bytes are binary AND of
+   the corresponding bytes from banks 1 and 2).
+ - $D5x2 or $D5x6 is not useful. It disables ROM (there are $FF bytes in
+   $A000-$AFFF).
+ - $D5x8-$D5xF disables whole cartridge (enables computer's memory in address
+   space between $A000 and $BFFF).
 
 +---------------------------------------------------------------------------+
 | Type 4: Standard 32 KB 5200 cartridge                                     |
@@ -190,9 +210,14 @@ are numbered in the order they appear in the image file, starting with 0.
 | Type 11: SpartaDOS X 64 KB cartridge                                      |
 +---------------------------------------------------------------------------+
 
- The cartridge has 8 banks mapped to $A000-$BFFF. An access to $D5E7 selects
- bank 0, $D5E6 - bank 1, etc. An access to $D5E8-$D5EF disables
- the cartridge.
+ The cartridge has 8 banks mapped to $A000-$BFFF. It also contains an
+ additional cartridge slot which allows to plug a second cartridge in.
+ An access to $D5E7 selects bank 0, $D5E6 - bank 1, etc. down to $D5E0. An
+ access to $D5E8-$D5EB disables the SDX cartridge and enables the second
+ cartridge. An access to $D5EC-$D5EF disables both cartridges.
+ Accesses to all addresses on page D5 always reaches the second cartridge,
+ even if it is disabled by SpartaDOS or if the SpartaDOS cartridge itself is
+ enabled.
 
 +---------------------------------------------------------------------------+
 | Type 12: XEGS 32 KB cartridge                                             |
@@ -222,15 +247,22 @@ are numbered in the order they appear in the image file, starting with 0.
  a byte written to $D500-$D5FF select the bank mapped to $8000-$BFFF.
 
 +---------------------------------------------------------------------------+
-| Type 15: OSS 'M091' 16 KB cartridge                                       |
+| Type 15: OSS one chip 16 KB cartridge                                     |
 +---------------------------------------------------------------------------+
 
- This is the simpler one of OSS schemes. It uses only A0 and A3 address
- lines:
- A3=0, A0=0 - $A000-$AFFF: bank 1, $B000-$BFFF: bank 0
- A3=0, A0=1 - $A000-$AFFF: bank 3, $B000-$BFFF: bank 0
- A3=1, A0=0 - disable cartridge
- A3=1, A0=1 - $A000-$AFFF: bank 2, $B000-$BFFF: bank 0
+ There are two types of OSS 16KB cartridges; this is the later, simpler one.
+ Used by BASIC XL 1.03, Action! 3.6, MAC/65 1.1 and BASIC XE 4.1 (and possibly
+ also by later versions of the above software).
+ It consists of one 16 KB ROM chip.
+ The cartridge occupies 8 KB of address space between $A000 and $BFFF. Its
+ memory is divided into 4 banks, 4 KB each. Bank number 0 (the first one) is
+ always mapped to $B000-$BFFF. Bank in $A000-$AFFF is selected by an access to
+ $D500-$D5FF. Only bits 0 and 3 of address are significant:
+ - A3=0, A0=0 - selects bank 1
+ - A3=0, A0=1 - selects bank 3
+ - A3=1, A0=0 - disables cartridge (enables computer's memory in address space
+   between $A000 and $BFFF)
+ - A3=1, A0=1 - selects bank 2
 
 +---------------------------------------------------------------------------+
 | Type 16: One chip 16 KB 5200 cartridge                                    |
@@ -437,15 +469,21 @@ are numbered in the order they appear in the image file, starting with 0.
 | Type 39: Phoenix 8 KB cartridge                                           |
 +---------------------------------------------------------------------------+
 
- An 8 KB cartridge, that occupies 8 KB of address space between $A000
- and $BFFF, and can be disabled by an access to $D500-$D5FF.
+ A 8 KB cartridge, that occupies 8 KB of address space between $A000
+ and $BFFF. It starts in enabled state and can be disabled by an access to
+ $D500-$D5FF. Re-enabling is possible only by turning the computer off and on.
+ Some units contain a RESET button that allows to enable the cartridge without
+ touching the power button.
 
 +---------------------------------------------------------------------------+
 | Type 40: Blizzard 16 KB cartridge                                         |
 +---------------------------------------------------------------------------+
 
  A 16 KB cartridge, that occupies 16 KB of address space between $8000
- and $BFFF, and can be disabled by an access to $D500-$D5FF.
+ and $BFFF. It starts in enabled state and can be disabled by an access to
+ $D500-$D5FF. Re-enabling is possible only by turning the computer off and on.
+ Some units contain a RESET button that allows to enable the cartridge without
+ touching the power button.
 
 +---------------------------------------------------------------------------+
 | Type 41: Atarimax 128 KB Flash cartridge                                  |
@@ -470,6 +508,269 @@ are numbered in the order they appear in the image file, starting with 0.
 | Type 43: SpartaDOS X 128 KB cartridge                                     |
 +---------------------------------------------------------------------------+
 
- The cartridge has 16 banks mapped to $A000-$BFFF. First 8 banks are selected
- by an access to $D5F7-$D5F0, the other 8 banks by an access to $D5E7-$D5E0.
- An access to $D5E8-$D5EF or $D5F8-$D5FF disables the cartridge.
+ The cartridge has 16 banks mapped to $A000-$BFFF. It also contains an
+ additional cartridge slot which allows to plug a second cartridge in. First
+ 8 banks are selected by an access to $D5F7-$D5F0, the other 8 banks by an
+ access to $D5E7-$D5E0. An access to $D5E8-$D5EB or $D5F8-$D5FB disables the
+ SDX cartridge and enables the second cartridge. An access to $D5EC-$D5EF or
+ $D5FC-$D5FF disables both cartriges.
+ Accesses to all addresses on page D5 always reaches the second cartridge,
+ even if it is disabled by SpartaDOS or if the SpartaDOS cartridge itself is
+ enabled.
+
++---------------------------------------------------------------------------+
+| Type 44: OSS 8 KB cartridge                                               |
++---------------------------------------------------------------------------+
+
+ Used in The Writer's Tool cartridge, it is actually an OSS one chip cartridge
+ board (see Type 15) with an 8 KB ROM chip instead of a normal 16 KB one.
+ The cartridge occupies 8 KB of address space between $A000 and $BFFF. Its
+ memory is divided into 2 banks, 4 KB each. Bank number 0 (the first one) is
+ always mapped to $B000-$BFFF. Bank in $A000-$AFFF is selected by an access to
+ $D500-$D5FF. Only bits 0 and 3 of address are significant:
+ - A3=0, A0=0 or 1 - selects bank 1
+ - A3=1, A0=0 - disables cartridge (enables computer's memory in address space
+   between $A000 and $BFFF)
+ - A3=1, A0=1 - selects bank 0
+
+Reference: http://www.retrobits.net/atari/osshack.shtml
+
++---------------------------------------------------------------------------+
+| Type 45: OSS two chip 16 KB cartridge (043M)                              |
++---------------------------------------------------------------------------+
+
+ There are two types of OSS 16KB cartridges; this is the earlier, more
+ complicated one. Used by BASIC XL 1.02 and earlier, Action! 3.5 and earlier,
+ and MAC/65 1.0. It consists of two 8 KB ROM chips.
+ The cartridge occupies 8 KB of address space between $A000 and $BFFF. Its
+ memory is divided into 4 banks, 4 KB each. Bank number 3 (the last one) is
+ always mapped to $B000-$BFFF. Bank in $A000-$AFFF is selected by an access to
+ $D500-$D5FF. Only 4 lowest bits of address are significant:
+ - $D5x0 selects bank 0.
+ - $D5x1 is not useful - it selects banks 0 and 2 (the bytes are binary AND of
+   the corresponding bytes from banks 0 and 2).
+ - $D5x3 or $D5x7 selects bank 2.
+ - $D5x4 selects bank 1.
+ - $D5x5 is not useful - it selects banks 1 and 2 (the bytes are binary AND of
+   the corresponding bytes from banks 1 and 2).
+ - $D5x2 or $D5x6 is not useful. It disables ROM (there are $FF bytes in
+   $A000-$AFFF).
+ - $D5x8-$D5xF disables whole cartridge (enables computer's memory in address
+   space between $A000 and $BFFF).
+
+ Reference: http://www.retrobits.net/atari/osscarts.shtml
+
++---------------------------------------------------------------------------+
+| Type 46: Blizzard 4 KB cartridge                                          |
++---------------------------------------------------------------------------+
+
+ A 4 KB cartridge, that occupies 8 KB of address space between $A000
+ and $BFFF. Line A12 is unconnected, so the cartridge's memory is duplicated
+ in $A000-$AFFF and $B000-$BFFF. The cartridge starts in enabled state and can
+ be disabled by an access to $D500-$D5FF. Re-enabling is possible only by
+ turning the computer off and on. Some units contain a RESET button that
+ allows to enable the cartridge without touching the power button.
+
+ Reference: http://www.serious-dial.atari.pl/Serious/S13/A18.html
+
++---------------------------------------------------------------------------+
+| Type 47: AST 32 KB cartridge                                              |
++---------------------------------------------------------------------------+
+
+ This cartridge occupies 8 KB of address space between $A000 and $BFFF. The
+ cartridge memory is divided into 128 banks, 256 B each. On power on, bank 0
+ is visible in $A000-$BFFF (repeated 32 times) and also in $D500-$D5FF. A
+ write operation to $D500-$D5FF disables the cartridge (freeing the
+ $A000-$BFFF area) and selects the next 256-byte bank visible at $D500-$D5FF.
+ After bank 31 the write operation selects bank 0 again.
+
+ Reference: http://www.atari.org.pl/forum/viewtopic.php?pid=134014#p134014
+
++---------------------------------------------------------------------------+
+| Type 48: Atrax SDX 64 KB cartridge                                        |
++---------------------------------------------------------------------------+
+
+ A variant of Type 11: SpartaDOS X 64 KB cartridge. The banking scheme is
+ identical, but the address and data lines between the cartridge port and the
+ ROM chip are interleaved as follows:
+   (Left - cartridge port + bank select lines, right - EPROM pins)
+    A0 -  A6
+    A1 -  A7
+    A2 - A12
+    A3 - A15
+    A4 - A14
+    A5 - A13
+    A6 -  A8
+    A7 -  A5
+    A8 -  A4
+    A9 -  A3
+   A10 -  A0
+   A11 -  A1
+   A12 -  A2
+   A13 -  A9  \
+   A14 - A11   > bank select
+   A15 - A10  /
+    D0 -  Q4
+    D1 -  Q0
+    D2 -  Q5
+    D3 -  Q1
+    D4 -  Q7
+    D5 -  Q6
+    D6 -  Q3
+    D7 -  Q2
+ By deinterleaving a ROM image, one would get a normal image of type 11.
+ See Type 11 for details on the banking scheme.
+
+ Reference: http://www.dereatari.republika.pl/atarisch/sparta.zip
+
++---------------------------------------------------------------------------+
+| Type 49: Atrax SDX 128 KB cartridge                                       |
++---------------------------------------------------------------------------+
+
+ A variant of Type 43: SpartaDOS X 128 KB cartridge. The banking scheme is
+ identical, but the address and data lines between the cartridge port and the
+ ROM chip are interleaved. The interleaving is similar to that of Type 48,
+ but with added A16 line, so it looks as follows:
+   (Left - cartridge port + bank select lines, right - EPROM pins)
+    A0 -  A6
+    A1 -  A7
+    A2 - A12
+    A3 - A15
+    A4 - A14
+    A5 - A13
+    A6 -  A8
+    A7 -  A5
+    A8 -  A4
+    A9 -  A3
+   A10 -  A0
+   A11 -  A1
+   A12 -  A2
+   A13 -  A9   \
+   A14 - A11    > bank select
+   A15 - A10   /
+   A16 - A16  /
+    D0 -  Q4
+    D1 -  Q0
+    D2 -  Q5
+    D3 -  Q1
+    D4 -  Q7
+    D5 -  Q6
+    D6 -  Q3
+    D7 -  Q2
+ By deinterleaving a ROM image, one would get a normal image of type 43.
+ See Type 43 for details on the banking scheme.
+
+ Reference: http://www.dereatari.republika.pl/atarisch/sparta.zip
+            http://trub.atari8.info/index.php?ref=atrax_128
+
++---------------------------------------------------------------------------+
+| Type 50: Turbosoft 64 KB cartridge                                        |
++---------------------------------------------------------------------------+
+
+ This bank-switched cartridge occupies 8 KB of address space between $A000
+ and $BFFF. The cartridge memory is divided into 8 banks, 8 KB each. Banks
+ are selected by an access to an address at $D500-$D5FF. Bits 0-2 of the
+ address select the bank mapped to $A000-$BFFF. Bit 4 disables the cartridge
+ and enables RAM. Bits 3, 6 and 7 are ignored. The cartridge starts with
+ bank 0 enabled.
+
+ Reference: http://www.retrogames.cl/turbosoft.html
+
++---------------------------------------------------------------------------+
+| Type 51: Turbosoft 128 KB cartridge                                       |
++---------------------------------------------------------------------------+
+
+ This bank-switched cartridge occupies 8 KB of address space between $A000
+ and $BFFF. The cartridge memory is divided into 16 banks, 8 KB each. Banks
+ are selected by an access to an address at $D500-D5FF. Bits 0-3 of the
+ address select the bank mapped to $A000-$BFFF. Bit 4 disables the cartridge
+ and enables RAM. Bits 6 and 7 are ignored. The cartridge starts with bank
+ 0 enabled.
+
+ Reference: http://www.retrogames.cl/turbosoft.html
+
++---------------------------------------------------------------------------+
+| Type 52: Ultracart 32 KB cartridge                                        |
++---------------------------------------------------------------------------+
+
+ This bank-switched cartridge occupies 8 KB of address space between $A000
+ and $BFFF. The cartridge memory is divided into 4 banks, 8 KB each. On power
+ on, bank 0 is visible. Each access to $D500-$D5FF switches another bank in
+ the sequence as follows: 0->1->2->3->cartridge disabled->0 etc.
+
+ Reference: Altirra source code, ver. 2.10-test20
+ http://www.atarimania.com/utility-atari-400-800-xl-xe-microcalc_28241.html
+
++---------------------------------------------------------------------------+
+| Type 53: Low bank 8 KB cartridge                                          |
++---------------------------------------------------------------------------+
+
+ This cartridge, destined for the left cartridge slot, occupies 8 KB of
+ address space between $8000 and $9FFF. It achieves that by asserting the RD4
+ line and not asserting the RD5 line.
+
+ Reference: http://www.atariage.com/forums/topic/161828-hooked-on-8-bit-carts/page__view__findpost__p__2338297
+
++---------------------------------------------------------------------------+
+| Type 54: SIC! 128 KB cartridge                                            |
++---------------------------------------------------------------------------+
+
+ Cartridge memory is divided into 8 banks, each 16KB long and consisting of
+ two 8KB subbanks. Each subbank can be mapped to Atari memory or switched
+ off. The lower subbank always maps to $8000-$9FFF, while the upper one always
+ maps to $A000-$BFFF.
+ Control register address is $D500-$D51F mirrored, read/write (written value
+ can be read at any time).
+ Bit 7 = 0 - flash write-protection is on
+ Bit 6 = 0 - odd 8k block (upper subbank) present in $A000-$BFFF
+ Bit 5 = 0 - even 8k block (lower subbank) not present in $8000-$9FFF 
+ Bits 4..3 - unused
+ Bits 2..0 - 16KB bank number (0..7)
+ Default value = 0 which means 0 bank upper subbank in address $A000-$BFFF
+ To switch cart off - poke $40 info $D500-$D51F
+ The cartridge also supports programming of the Flash ROM - this feature is
+ currently not emulated.
+
+ Reference: http://sic.pigwa.net/files/specyfikacja_pl_eng.zip
+
++---------------------------------------------------------------------------+
+| Type 55: SIC! 256 KB cartridge                                            |
++---------------------------------------------------------------------------+
+
+ Same as Type 54, but with cartridge memory being divided into 16 banks.
+ Bit 4 is unused
+ Bits 3..0 - 16KB bank number (0..15)
+
++---------------------------------------------------------------------------+
+| Type 56: SIC! 512 KB cartridge                                            |
++---------------------------------------------------------------------------+
+
+ Same as Type 54, but with cartridge memory being divided into 32 banks.
+ Bits 4..0 - 16KB bank number (0..31)
+
++---------------------------------------------------------------------------+
+| Type 57: Standard 2 KB cartridge                                          |
++---------------------------------------------------------------------------+
+
+ A 2 KB cartridge, that occupies 8 KB of address space between $A000 and
+ $BFFF. The ROM chip is active only when lines A11 and A12 are high. In
+ effect, the cartridge's memory appears at $B800-$BFFF while the $A000-B7FF
+ area is unavailable and returns $FF when read.
+
++---------------------------------------------------------------------------+
+| Type 58: Standard 4 KB cartridge                                          |
++---------------------------------------------------------------------------+
+
+ A 4 KB cartridge, that occupies 8 KB of address space between $A000 and
+ $BFFF. The ROM chip is active only when line A12 is high. In effect, the
+ cartridge's memory appears at $B000-$BFFF while the $A000-AFFF area is
+ unavailable and returns $FF when read.
+
++---------------------------------------------------------------------------+
+| Type 59: Right slot 4 KB cartridge                                        |
++---------------------------------------------------------------------------+
+
+ A 4 KB cartridge for Atari 800, mapped into $8000-$9FFF. The ROM chip is
+ active only when line A12 is high. In effect, the cartridge's memory appears
+ at $9000-$9FFF while the $8000-8FFF area is unavailable and returns $FF when
+ read.
