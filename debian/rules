@@ -9,15 +9,8 @@ P=atari800
 
 ARCH := $(shell dpkg-architecture -qDEB_BUILD_ARCH)
 
-# Special Debian build options - nostrip yet un-handled
-export CFLAGS
-CFLAGS += -g -Wall
-ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
-CFLAGS += -O0
-else
-CFLAGS += -O3
-endif
-
+DPKG_EXPORT_BUILDFLAGS = 1
+include /usr/share/dpkg/buildflags.mk
 
 # Build the binary components and assemble the libraries
 # =====================================================================
