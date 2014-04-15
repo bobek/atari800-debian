@@ -325,9 +325,6 @@
 /* Define to allow sound interpolation. */
 #undef INTERPOLATE_SOUND
 
-/* Target: Java NestedVM. */
-#undef JAVANVM
-
 /* Define to use LINUX joystick. */
 #undef LINUX_JOYSTICK
 
@@ -392,6 +389,9 @@
 /* Define to use page-based attribute array. */
 #undef PAGED_ATTRIB
 
+/* Use accurate PAL color blending. */
+#undef PAL_BLENDING
+
 /* Define to emulate the Black Box. */
 #undef PBI_BB
 
@@ -404,11 +404,17 @@
 /* Define to emulate the 1400XL/1450XLD. */
 #undef PBI_XLD
 
+/* Platform-specific mapping of RGB palette to display surface. */
+#undef PLATFORM_MAP_PALETTE
+
 /* Target: Sony PlayStation 2. */
 #undef PS2
 
 /* Define as the return type of signal handlers (`int' or `void'). */
 #undef RETSIGTYPE
+
+/* Target: Raspberry Pi. */
+#undef RPI
 
 /* Define to use R: device. */
 #undef R_IO_DEVICE
@@ -440,6 +446,12 @@
 /* Define to activate sound support. */
 #undef SOUND
 
+/* Platform updates sound buffer by callback function. */
+#undef SOUND_CALLBACK
+
+/* Use new sound API. */
+#undef SOUND_THIN_API
+
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
 
@@ -460,6 +472,9 @@
 
 /* Platform-specific sleep function. */
 #undef SUPPORTS_PLATFORM_SLEEP
+
+/* Platform-specific time function. */
+#undef SUPPORTS_PLATFORM_TIME
 
 /* Can display the screen rotated sideways. */
 #undef SUPPORTS_ROTATE_VIDEOMODE
@@ -487,6 +502,9 @@
 
 /* Target: Ncurses library. */
 #undef USE_NCURSES
+
+/* Define to enable on-screen keyboard. */
+#undef USE_UI_BASIC_ONSCREEN_KEYBOARD
 
 /* Define to use very slow computer support (faster -refresh). */
 #undef VERY_SLOW

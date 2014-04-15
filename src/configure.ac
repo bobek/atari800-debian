@@ -1,7 +1,7 @@
 dnl   configure.ac - Autoconf script for building configure
 dnl
 dnl   Copyright (C) 2001 Krzysztof Nikiel
-dnl   Copyright (C) 2001-2011 Atari800 development team (see DOC/CREDITS)
+dnl   Copyright (C) 2001-2014 Atari800 development team (see DOC/CREDITS)
 dnl
 dnl   This file is part of the Atari800 emulator project which emulates
 dnl   the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -21,7 +21,7 @@ dnl   along with Atari800; if not, write to the Free Software
 dnl   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 AC_PREREQ(2.57)
-AC_INIT(Atari800, 3.0.0, pstehlik@sophics.cz)
+AC_INIT(Atari800, 3.1.0, pstehlik@sophics.cz)
 AC_CONFIG_SRCDIR(atari.c)
 AC_CONFIG_HEADER(config.h)
 
@@ -29,7 +29,7 @@ AC_CONFIG_HEADER(config.h)
 dnl Set a8_target...
 
 case "$target" in
-    default | falcon | javanvm | javanvm-basic | ps2 | android | windx | x11 | x11-shm | x11-motif | x11-xview | x11-xview-shm)
+    default | falcon | ps2 | rpi | android | windx | x11 | x11-shm | x11-motif | x11-xview | x11-xview-shm)
         a8_target="$target"
         ;;
     shm | motif | xview | xview-shm)
@@ -48,9 +48,8 @@ case "$target" in
         echo "    default          (autodetect available graphics and sound libraries)"
         echo "    android          (Android devices)"
         echo "    falcon           (Atari Falcon systems only)"
-        echo "    javanvm          (Java NestedVM: set --host=mips-unknown-elf)"
-        echo "    javanvm-basic    (Java NestedVM text-mode: set --host=mips-unknown-elf)"
         echo "    ps2              (Sony PlayStation 2)"
+        echo "    rpi              (Raspberry Pi: set --host=arm-linux)"
         echo "    windx            (Windows with DirectX only)"
         echo "    x11              (Standard X11)"
         echo "    (x11-)motif      (Motif on X11)"
@@ -136,6 +135,11 @@ if [[ "$a8_target" = "ps2" ]]; then
     LDFLAGS="$LDFLAGS -L${PS2SDK}/ee/lib -L${GSKITSRC}/lib -L${PS2DEV}/ee/lib/gcc-lib/ee/3.2.2"
     LDFLAGS="$LDFLAGS -L${PS2SDK}/ports/lib"
 fi
+if [[ "$a8_target" = "rpi" ]]; then
+    CC="${RPI_SDK}/bin/arm-linux-gnueabihf-gcc"
+    CFLAGS="$CFLAGS -I${RPI_SDK}/include -I${RPI_SDK}/include/SDL -I${RPI_SDK}/include/interface/vmcs_host/linux -I${RPI_SDK}/include/interface/vcos/pthreads"
+    LDFLAGS="$LDFLAGS -Wl,--unresolved-symbols=ignore-in-shared-libs -L${RPI_SDK}/lib"
+fi
 if [[ "$a8_target" = "android" ]]; then
 	CC="arm-eabi-gcc"
 	CPP="arm-eabi-cpp"
@@ -166,6 +170,7 @@ AC_DEFUN(TRY_USE_SDL,
         [
             OBJS="$OBJS sdl/init.o"
             AC_DEFINE(SDL,1,[Target: SDL library.])
+            AC_DEFINE(SUPPORTS_PLATFORM_TIME,1,[Platform-specific time function.])
             LIBS="$LIBS $SDL_LIBS"
             CPPFLAGS="$CPPFLAGS $SDL_CFLAGS"
             if [[ "$a8_host" = "win" ]]; then
@@ -184,6 +189,28 @@ dnl Don't make this a windowed app, make it a console app.
         ])
     fi
 ])
+
+dnl Check if host os Java NestedVM...
+AC_MSG_CHECKING([whether host is Java NestedVM])
+AC_LINK_IFELSE(
+	[AC_LANG_PROGRAM(
+		[[extern int _call_java(int a, int b, int c, int d);]],
+		[[_call_java(0, 0, 0, 0);]]
+	)],
+	[
+		a8_host=javanvm
+		EXEEXT=".mips"
+		enable_unalignedwords=no
+		if [[ "$build_os" = "cygwin" ]]; then
+			JAVAFLAGS="-classpath '""`cygpath -wp $CLASSPATH`'"
+			JAVACFLAGS="-source 1.4 -classpath '""`cygpath -wp $CLASSPATH`'"
+		fi
+		AC_MSG_RESULT(yes)
+	],
+	[
+		AC_MSG_RESULT(no)
+	]
+)
 
 dnl Check for header files...
 
@@ -257,33 +284,10 @@ dnl BeOS has a real issue with redundant-decls
         AC_CHECK_LIB(gem, appl_init)
         OBJS="atari_falcon.o falcon/c2p_uni.o falcon/c2p_unid.o falcon/videl.o falcon/ikbd.o"
         ;;
-    javanvm)
-        AC_DEFINE(JAVANVM,1,[Target: Java NestedVM.])
-        AC_DEFINE(SUPPORTS_PLATFORM_PALETTEUPDATE,1,[Update the Palette if it changed.])
-        AC_DEFINE(SUPPORTS_PLATFORM_SLEEP,1,[Platform-specific sleep function.])
-        AC_DEFINE(SUPPORTS_SOUND_REINIT,1,[Reinitialise the sound system.])
-        OBJS="javanvm/atari_javanvm.o"
-        EXEEXT=".mips"
-        enable_unalignedwords=no
-        if [[ "$build_os" = "cygwin" ]]; then
-            JAVAFLAGS="-classpath '""`cygpath -wp $CLASSPATH`'"
-            JAVACFLAGS="-source 1.4 -classpath '""`cygpath -wp $CLASSPATH`'"
-        fi
-        CFLAGS="$CFLAGS -ansi -pedantic -Waggregate-return -Wmissing-declarations -Wmissing-prototypes -Wredundant-decls -Wstrict-prototypes -Winline"
-        ;;
-    javanvm-basic)
-        AC_DEFINE(BASIC,1,[Target: standard I/O.])
-        OBJS="atari_basic.o"
-        EXEEXT=".mips"
-        enable_unalignedwords=no
-        enable_sound=no
-        if [[ "$build_os" = "cygwin" ]]; then
-            JAVAFLAGS="-classpath '""`cygpath -wp $CLASSPATH`'"
-            JAVACFLAGS="-classpath '""`cygpath -wp $CLASSPATH`'"
-        fi
-        ;;
     ps2)
         AC_DEFINE(PS2,1,[Target: Sony PlayStation 2.])
+        AC_DEFINE(SUPPORTS_PLATFORM_SLEEP,1,[Platform-specific sleep function.])
+        AC_DEFINE(SUPPORTS_PLATFORM_TIME,1,[Platform-specific time function.])
         AC_DEFINE(DEFAULT_CFG_NAME,"mc0:/ATARI/ATARI800.CFG",[Alternate config filename due to 8+3 fs limit.])
         A8_NEED_LIB(kernel)
 	A8_NEED_LIB(audsrv)
@@ -298,6 +302,18 @@ dnl BeOS has a real issue with redundant-decls
         A8_NEED_LIB(z)
         A8_NEED_LIB(c)
         OBJS="atari_ps2.o ps2kbd.s usbd.s audsrv.s"
+        ;;
+    rpi)
+        AC_DEFINE(RPI,1,[Target: Raspberry Pi.])
+        AC_DEFINE(GUI_SDL,1,[Use SDL for graphics and input.])
+        AC_DEFINE(SUPPORTS_PLATFORM_CONFIGURE,1,[Additional config file options.])
+        AC_DEFINE(SUPPORTS_PLATFORM_CONFIGSAVE,1,[Save additional config file options.])
+        AC_DEFINE(SUPPORTS_PLATFORM_PALETTEUPDATE,1,[Update the Palette if it changed.])
+        A8_NEED_LIB(GLESv2)
+        A8_NEED_LIB(EGL)
+        A8_NEED_LIB(SDL)
+        A8_NEED_LIB(bcm_host)
+        OBJS="atari_rpi.o gles2/video.o sdl/main.o sdl/input.o"
         ;;
 	android)
         AC_DEFINE(ANDROID,1,[Target: Android])
@@ -480,10 +496,10 @@ else
     AC_CHECK_FUNCS([stat strcasecmp strchr strdup strerror strrchr strstr])
     AC_CHECK_FUNCS([strtol system time tmpfile tmpnam uclock unlink vsnprintf])
     AX_FUNC_MKDIR
-fi
-dnl select usleep strncpy are broken on javanvm targets
-if [[ "$a8_target" != "javanvm" -a "$a8_target" != "javanvm-basic" -a "$a8_target" != "android" ]]; then
-    AC_CHECK_FUNCS([select usleep strncpy])
+	dnl select usleep strncpy are broken on the NestedVM host
+    if test "x$a8_host" != xjavanvm ; then
+        AC_CHECK_FUNCS([select usleep strncpy])
+    fi
 fi
 if [[ "$a8_host" != "win" -a "$a8_target" != "android" ]]; then
     AC_CHECK_FUNCS([gethostbyaddr gethostbyname inet_ntoa socket],,SUPPORTS_RDEVICE=no)
@@ -492,10 +508,10 @@ fi
 dnl Select/detect video interface.
 
 AC_ARG_WITH([video],
-    [AC_HELP_STRING([--with-video@<:@=no|yes|curses|ncurses|pdcurses|dosvga|sdl@:>@],[Select video interface to use @<:@default=check@:>@])],
+    [AC_HELP_STRING([--with-video@<:@=no|yes|curses|ncurses|pdcurses|dosvga|sdl|javanvm@:>@],[Select video interface to use @<:@default=check@:>@])],
     [
         case "$withval" in
-            no | yes | check | curses | ncurses | pdcurses | dosvga | sdl)
+            no | yes | check | curses | ncurses | pdcurses | dosvga | sdl | javanvm)
                 ;;
             *)
                 AC_MSG_ERROR([unrecognized value for --with-video: "$withval"])
@@ -506,6 +522,13 @@ AC_ARG_WITH([video],
 
 if [[ "$a8_target" = default ]]; then
     if [[ "$with_video" != no ]]; then
+        if [[ "$with_video" = check -o "$with_video" = yes -o "$with_video" = javanvm ]]; then
+            if [[ "$a8_host" = javanvm ]]; then
+                with_video=javanvm
+            elif [[ "$with_video" = javanvm ]]; then
+                AC_MSG_ERROR([--with-video=javanvm was given, but host system is not NestedVM!])
+            fi
+        fi
         if [[ "$with_video" = check -o "$with_video" = yes -o "$with_video" = dosvga ]]; then
             if [[ "$a8_host" = dos ]]; then
                 with_video=dosvga
@@ -557,6 +580,11 @@ if [[ "$a8_target" = default ]]; then
         with_video=no
     fi
     case "$with_video" in
+        javanvm)
+            AC_DEFINE(SUPPORTS_PLATFORM_PALETTEUPDATE,1,[Update the Palette if it changed.])
+            AC_DEFINE(SUPPORTS_PLATFORM_SLEEP,1,[Platform-specific sleep function.])
+            OBJS="javanvm/main.o javanvm/video.o javanvm/input.o"
+            ;;
         sdl)
             AC_DEFINE(GUI_SDL,1,[Use SDL for graphics and input.])
             AC_DEFINE(SUPPORTS_PLATFORM_CONFIGURE,1,[Additional config file options.])
@@ -564,8 +592,10 @@ if [[ "$a8_target" = default ]]; then
             AC_DEFINE(SUPPORTS_PLATFORM_PALETTEUPDATE,1,[Update the Palette if it changed.])
             AC_DEFINE(SUPPORTS_CHANGE_VIDEOMODE,1,[Can change video modes on the fly.])
             AC_DEFINE(SUPPORTS_ROTATE_VIDEOMODE,1,[Can display the screen rotated sideways.])
+            AC_DEFINE(PLATFORM_MAP_PALETTE,1,[Platform-specific mapping of RGB palette to display surface.])
             WANT_XEP80_EMULATION=yes
             WANT_NTSC_FILTER=yes
+            WANT_PAL_BLENDING=yes
             OBJS="$OBJS videomode.o sdl/main.o sdl/video.o sdl/video_sw.o sdl/input.o sdl/palette.o"
             AC_DEFINE(PBI_PROTO80,1,[A prototype 80 column card for the 1090 expansion box.])
             OBJS="$OBJS pbi_proto80.o"
@@ -611,7 +641,7 @@ AC_DEFUN([A8_OPTION],[
     fi
 ])
 
-if [[ \( "$a8_target" != "default" -o "$with_video" != no \) -a "$a8_target" != "javanvm-basic" ]]; then
+if [[ "$a8_target" != "default" -o "$with_video" != no ]]; then
 
     dnl These objects are not compiled when --with-video=no
     OBJS="$OBJS input.o statesav.o ui_basic.o ui.o"
@@ -628,7 +658,7 @@ if [[ \( "$a8_target" != "default" -o "$with_video" != no \) -a "$a8_target" != 
     if [[ "$WANT_CURSES_BASIC" != "yes" ]]; then
 
         dnl These objects are not compiled when --with-video=no or --enable-cursesbasic=no
-        OBJS="$OBJS colours.o colours_ntsc.o colours_pal.o colours_external.o screen.o"
+        OBJS="$OBJS artifact.o colours.o colours_ntsc.o colours_pal.o colours_external.o screen.o"
 
         A8_OPTION(newcycleexact,yes,
                   [Allow color changes inside a scanline (default=ON)],
@@ -727,10 +757,10 @@ fi
 dnl Select/detect sound interface.
 
 AC_ARG_WITH([sound],
-    [AC_HELP_STRING([--with-sound@<:@=no|yes|dossb|oss|falcon|win|sdl@:>@],[Select sound interface to use @<:@default=check@:>@])],
+    [AC_HELP_STRING([--with-sound@<:@=no|yes|dossb|oss|falcon|win|sdl|javanvm@:>@],[Select sound interface to use @<:@default=check@:>@])],
     [
         case "$withval" in
-            no | yes | check | dossb | oss | falcon | win | sdl)
+            no | yes | check | dossb | oss | falcon | win | sdl | javanvm)
                 ;;
             *)
                 AC_MSG_ERROR([unrecognized value for --with-sound: "$withval"])
@@ -739,8 +769,15 @@ AC_ARG_WITH([sound],
     ],
     [with_sound=check])
 
-if [[ "$a8_target" != "ps2" -a "$a8_target" != "android" -a "$a8_target" != "javanvm" ]]; then
+if [[ "$a8_target" != "ps2" -a "$a8_target" != "android" ]]; then
     if [[ "$with_sound" != no ]]; then
+        if [[ "$with_sound" = check -o "$with_sound" = yes -o "$with_sound" = javanvm ]]; then
+            if [[ "$a8_host" = javanvm ]]; then
+                with_sound=javanvm
+            elif [[ "$with_sound" = javanvm ]]; then
+                AC_MSG_ERROR([--with-sound=javanvm was given, but host system is not NestedVM!])
+            fi
+        fi
         if [[ "$with_sound" = check -o "$with_sound" = yes -o "$with_sound" = win ]]; then
             AC_CHECK_LIB([winmm], [main],
                 [LIBS="-lwinmm $LIBS"
@@ -785,9 +822,13 @@ if [[ "$a8_target" != "ps2" -a "$a8_target" != "android" -a "$a8_target" != "jav
         with_sound=no
     fi
     case "$with_sound" in
+        javanvm)
+            WANT_SOUND_THIN_API=yes
+            OBJS="$OBJS javanvm/sound.o"
+            ;;
         sdl)
-            AC_DEFINE(SUPPORTS_SOUND_REINIT,1,[Reinitialise the sound system.])
-            SUPPORTS_SYNCHRONIZED_SOUND="yes"
+            WANT_SOUND_THIN_API=yes
+            WANT_SOUND_CALLBACK=yes
             OBJS="$OBJS sdl/sound.o"
             ;;
         win)
@@ -798,9 +839,12 @@ if [[ "$a8_target" != "ps2" -a "$a8_target" != "android" -a "$a8_target" != "jav
             OBJS="$OBJS sound_falcon.o falcon/sound_dma.o"
             ;;
         oss)
+            WANT_SOUND_THIN_API=yes
             OBJS="$OBJS sound_oss.o"
             ;;
         dossb)
+            WANT_SOUND_THIN_API=yes
+            WANT_SOUND_CALLBACK=yes
             OBJS="$OBJS dos/sound_dos.o dos/dos_sb.o"
             ;;
         no)
@@ -818,7 +862,9 @@ if [[ "$with_sound" != no ]]; then
     AC_DEFINE(SOUND, 1, [Define to activate sound support.])
     OBJS="$OBJS pokeysnd.o mzpokeysnd.o remez.o sndsave.o"
 
-    if [[ "$SUPPORTS_SYNCHRONIZED_SOUND" = "yes" ]]; then
+    if [[ "$WANT_SOUND_THIN_API" = "yes" ]]; then
+        AC_DEFINE(SOUND_THIN_API,1,[Use new sound API.])
+        OBJS="$OBJS sound.o"
         A8_OPTION(synchronized_sound,yes,
                   [Use synchronized sound (default=ON)],
                   SYNCHRONIZED_SOUND,[Define to use synchronized sound.]
@@ -828,6 +874,9 @@ if [[ "$with_sound" != no ]]; then
                   [Use nonlinear POKEY mixing (default=ON)],
                   NONLINEAR_MIXING,[Define to use nonlinear POKEY mixing.]
                  )
+        if [[ "$WANT_SOUND_CALLBACK" = "yes" ]]; then
+            AC_DEFINE(SOUND_CALLBACK,1,[Platform updates sound buffer by callback function.])
+        fi
     else
 
         A8_OPTION(nonlinear_mixing,no,
@@ -847,11 +896,13 @@ if [[ "$with_sound" != no ]]; then
               STEREO_SOUND,[Define to allow stereo sound.]
              )
 
-    A8_OPTION(volonlysound,yes,
-              [Use volume only sound (digitized sound effects) (default=ON)],
-              VOL_ONLY_SOUND,[Define to allow volume only sound.]
-             )
-    if [[ "$WANT_VOL_ONLY_SOUND" = "yes" ]]; then
+    if [[ "$WANT_SYNCHRONIZED_SOUND" != "yes" ]]; then
+        A8_OPTION(volonlysound,yes,
+                  [Use volume only sound (digitized sound effects) (default=ON)],
+                  VOL_ONLY_SOUND,[Define to allow volume only sound.]
+                 )
+    fi
+    if [[ "$WANT_SYNCHRONIZED_SOUND" = "yes" -o "$WANT_VOL_ONLY_SOUND" = "yes" ]]; then
         A8_OPTION(consolesound,yes,
                   [Use console sound (keyboard clicks) (default=ON)],
                   CONSOLE_SOUND,[Define to allow console sound (keyboard clicks).]
@@ -906,6 +957,13 @@ if [[ "$WANT_IDE" == "yes" ]]; then
     AC_SYS_LARGEFILE
     AC_FUNC_FSEEKO
     OBJS="$OBJS ide.o"
+fi
+
+if [[ "$a8_use_sdl" = yes ]]; then
+    A8_OPTION(onscreenkeyboard,no,
+              [Enable on-screen keyboard (default=OFF)],
+              USE_UI_BASIC_ONSCREEN_KEYBOARD,[Define to enable on-screen keyboard.]
+             )
 fi
 
 dnl Select/detect features based on external software...
@@ -1021,6 +1079,12 @@ if [[ "$WANT_NTSC_FILTER" = "yes" ]]; then
     OBJS="$OBJS filter_ntsc.o atari_ntsc/atari_ntsc.o"
 fi
 
+if [[ "$WANT_PAL_BLENDING" = "yes" ]]; then
+    AC_DEFINE(PAL_BLENDING,1,[Use accurate PAL color blending.])
+    OBJS="$OBJS pal_blending.o"
+    
+fi
+
 if [[ "$SUPPORTS_RDEVICE" = "yes" ]]; then
     A8_OPTION(riodevice,no,
               [Use the R: networking device (Linux/Unix/Win32) (default=OFF)],
@@ -1051,6 +1115,8 @@ AC_SUBST(JAVAFLAGS)
 AC_SUBST(JAVACFLAGS)
 CONFIGURE_TARGET="$target"
 AC_SUBST(CONFIGURE_TARGET)
+CONFIGURE_HOST="$a8_host"
+AC_SUBST(CONFIGURE_HOST)
 AC_CONFIG_FILES(Makefile)
 if [[ "$a8_target" = "android" ]]; then
 	AC_CONFIG_FILES(android/jni/Android.mk)
@@ -1074,7 +1140,7 @@ if [[ "$a8_target" = default ]]; then
             ;;
     esac
 fi
-if [[ \( "$a8_target" != "default" -o "$with_video" != no \) -a "$a8_target" != "javanvm-basic" ]]; then
+if [[ "$a8_target" != "default" -o "$with_video" != no ]]; then
     if [[ "$WANT_CURSES_BASIC" != "yes" ]]; then
         echo "Using cycle exact?....................: $WANT_NEW_CYCLE_EXACT"
         echo "Using the very slow computer support?.: $WANT_VERY_SLOW"
@@ -1132,6 +1198,7 @@ if [[ "$SUPPORTS_RDEVICE" = "yes" ]]; then
         fi
 fi
 if [[ "$a8_target" = default -a "$with_video" = sdl ]]; then
+    echo "Using on-screen keyboard?.............: $WANT_USE_UI_BASIC_ONSCREEN_KEYBOARD"
     echo "Using OpenGL?.........................: $with_opengl"
 fi
 echo
