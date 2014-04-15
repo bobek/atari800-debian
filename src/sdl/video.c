@@ -25,11 +25,15 @@
 #include <SDL.h>
 
 #include "af80.h"
+#include "artifact.h"
 #include "atari.h"
 #include "colours.h"
 #include "config.h"
 #include "filter_ntsc.h"
 #include "log.h"
+#ifdef PAL_BLENDING
+#include "pal_blending.h"
+#endif /* PAL_BLENDING */
 #include "pbi_proto80.h"
 #include "platform.h"
 #include "screen.h"
@@ -38,6 +42,7 @@
 #include "xep80.h"
 
 #include "sdl/input.h"
+#include "sdl/palette.h"
 #include "sdl/video.h"
 #include "sdl/video_sw.h"
 #if HAVE_OPENGL
@@ -77,6 +82,23 @@ static int window_maximised = FALSE;
 static int user_video_driver = FALSE;
 #endif /* HAVE_WINDOWS_H */
 
+void SDL_VIDEO_UpdatePaletteLookup(VIDEOMODE_MODE_t mode, int bpp_32)
+{
+#ifdef PAL_BLENDING
+	if (mode == VIDEOMODE_MODE_NORMAL && ARTIFACT_mode == ARTIFACT_PAL_BLEND)
+		PAL_BLENDING_UpdateLookup();
+	else
+#endif /* PAL_BLENDING */
+	if (mode != VIDEOMODE_MODE_NTSC_FILTER) {
+		void *dest;
+		if (bpp_32)
+			dest = SDL_PALETTE_buffer.bpp32;
+		else
+			dest = SDL_PALETTE_buffer.bpp16;
+		PLATFORM_MapRGB(dest, SDL_PALETTE_tab[mode].palette, SDL_PALETTE_tab[mode].size);
+	}
+}
+
 void PLATFORM_PaletteUpdate(void)
 {
 	if (SDL_VIDEO_current_display_mode == VIDEOMODE_MODE_NTSC_FILTER)
@@ -89,6 +111,26 @@ void PLATFORM_PaletteUpdate(void)
 #endif
 			SDL_VIDEO_SW_PaletteUpdate();
 	}
+}
+
+void PLATFORM_GetPixelFormat(PLATFORM_pixel_format_t *format)
+{
+#if HAVE_OPENGL
+	if (SDL_VIDEO_opengl)
+		SDL_VIDEO_GL_GetPixelFormat(format);
+	else
+#endif
+		SDL_VIDEO_SW_GetPixelFormat(format);
+}
+
+void PLATFORM_MapRGB(void *dest, int const *palette, int size)
+{
+#if HAVE_OPENGL
+	if (SDL_VIDEO_opengl)
+		SDL_VIDEO_GL_MapRGB(dest, palette, size);
+	else
+#endif
+		SDL_VIDEO_SW_MapRGB(dest, palette, size);
 }
 
 static void UpdateNtscFilter(VIDEOMODE_MODE_t mode)
@@ -308,13 +350,15 @@ void SDL_VIDEO_InitSDL(void)
 
 void SDL_VIDEO_QuitSDL(void)
 {
+	if (SDL_VIDEO_screen != NULL) {
 #if HAVE_OPENGL
-	if (currently_opengl)
-		SDL_VIDEO_GL_Cleanup();
+		if (currently_opengl)
+			SDL_VIDEO_GL_Cleanup();
 #endif
-	SDL_VIDEO_screen = NULL;
+		SDL_VIDEO_screen = NULL;
 
-	SDL_QuitSubSystem(SDL_INIT_VIDEO);
+		SDL_QuitSubSystem(SDL_INIT_VIDEO);
+	}
 }
 
 void SDL_VIDEO_ReinitSDL(void)

@@ -4,10 +4,12 @@ Current active members of the Atari800 development team:
     Petr Stehlik        (maintainer)
     Perry McFarlane     (core developer)
     Piotr Fusik         (core developer)
+    Tomasz Krasuski     (core developer)
     Mark Grebe          (Mac OSX)
     Kostas Nakos        (Windows CE, Android)
     James Wilkinson     (DOS, BeOS, Win32)
     Christian Groessler (Sega Dreamcast)
+    Andrey Dj           (Raspberry Pi)
 
 
 
@@ -65,6 +67,9 @@ David Dahlstrom <ddahlstrom@charter.net>
 
 Nir Dary <ndary@bigfoot.com>
     - detailed information about OSS, Williams, XEGS and MegaCart cartridges
+
+Andrey Dj <djdron@gmail.com>
+    - Raspberry Pi support
 
 Jason Duerstock <jason@cluephone.com>
     - R-Time 8 cartridge support (real date and time from host machine)
@@ -331,6 +336,8 @@ Erhard Puetz <erhard-puetz@wtal.de>
 
 Matthias Reichl  <hias@horus.com>
     - POKEY ALLPOT register fix
+    - The!Cart emulation fixes
+    - reported quirks in behaviour of XEGS cartridges
 
 Thomas Richter <thor@math.tu-berlin.de>
     - GTIA collisions and third colour of players

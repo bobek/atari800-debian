@@ -6,7 +6,8 @@ LIBS = @LIBS@
 TARGET_BASE_NAME = atari800
 TARGET = $(TARGET_BASE_NAME)@EXEEXT@
 CONFIGURE_TARGET = @CONFIGURE_TARGET@
-ifeq (@EXEEXT@,.mips)
+CONFIGURE_HOST = @CONFIGURE_HOST@
+ifeq (@CONFIGURE_HOST@, javanvm)
 	FINALTARGET = $(TARGET_BASE_NAME).jar
 	JAVAFLAGS = @JAVAFLAGS@
 	JAVA = java
@@ -89,7 +90,7 @@ ide.o: ide.c ide.h ide_internal.h
 %.o: %.S
 	$(CC) -c -o $@ $(DEFS) -I. $(CFLAGS) $<
 
-ifeq ($(CONFIGURE_TARGET),javanvm)
+ifeq ($(CONFIGURE_HOST),javanvm)
 $(TARGET_BASE_NAME).class: javanvm/$(TARGET_BASE_NAME).java | $(TARGET_BASE_NAME)_runtime.class
 	$(JAVAC) -d . $(JAVACFLAGS) javanvm/$(TARGET_BASE_NAME).java
 RUNTIME = _runtime
@@ -105,7 +106,7 @@ $(TARGET_BASE_NAME)$(RUNTIME).class: $(TARGET)
 ##Also, -o UnixRuntime fixes directory browsing but requires /c:/-style paths
 
 $(TARGET_BASE_NAME).jar: $(TARGET_BASE_NAME).class $(TARGET_BASE_NAME)$(RUNTIME).class
-	echo -e "Manifest-Version: 1.0\nMain-Class: $(TARGET_BASE_NAME)\nClass-Path: unix_runtime.jar\n" > .manifest
+	printf "Manifest-Version: 1.0\nMain-Class: $(TARGET_BASE_NAME)\nClass-Path: unix_runtime.jar\n" > .manifest
 	jar cfm $(TARGET_BASE_NAME).jar .manifest *.class
 
 # Allow parallel execution in sub-make with '+'

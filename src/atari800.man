@@ -1,4 +1,4 @@
-.TH ATARI800 1 "2013-03-03" "Atari800 3.0.0"
+.TH ATARI800 1 "2014-04-12" "Atari800 3.1.0"
 
 .SH NAME
 atari800 \- emulator of Atari 8-bit computers and the 5200 console
@@ -255,7 +255,7 @@ Turn on Atari BASIC ROM
 .BI \-cart\  filename
 Insert cartridge (CART or raw format)
 .TP
-.BR "\-cart\-type 0" .. 59
+.BR "\-cart\-type 0" .. 67
 Select type of the cartridge inserted with the \fB\-cart\fR option.
 When inserting a raw ROM image its type cannot be detected automaticcaly,
 and must be provided with this option.
@@ -301,7 +301,7 @@ SpartaDos X 64 KB cartridge
 XEGS 32 KB cartridge
 .TP
 .B 13
-XEGS 64 KB cartridge
+XEGS 64 KB cartridge (banks 0-7)
 .TP
 .B 14
 XEGS 128 KB cartridge
@@ -440,6 +440,30 @@ Standard 4 KB cartridge
 .TP
 .B 59
 Right slot 4 KB cartridge
+.TP
+.B 60
+Blizzard 32 KB cartridge
+.TP
+.B 61
+MegaMax 2 MB cartridge
+.TP
+.B 62
+The!Cart 128 MB cartridge
+.TP
+.B 63
+Flash MegaCart 4 MB cartridge
+.TP
+.B 64
+MegaCart 2 MB cartridge
+.TP
+.B 65
+The!Cart 32 MB cartridge
+.TP
+.B 66
+The!Cart 64 MB cartridge
+.TP
+.B 67
+XEGS 64 KB cartridge (banks 8-15)
 .PD
 .RE
 If this option is not given, the user will be asked to choose the cartridge
@@ -450,7 +474,7 @@ Insert piggyback cartridge (CART or raw format).
 This works only if the first cartridge is a pass-through (currently only
 SpartaDOS X 64KB and 128KB types).
 .TP
-.BR "\-cart2\-type 0" .. 59
+.BR "\-cart2\-type 0" .. 67
 Select type of the cartridge inserted with the \fB-cart2\fR option.
 When inserting a raw ROM image its type cannot be detected automatically,
 and must be provided with this option.
@@ -611,8 +635,37 @@ This value effects the speed of the emulation: A higher value results in
 faster CPU emulation but a less frequently updated screen.
 
 .TP
+\fB\-ntsc\-artif \fImode\fR, \fB\-pal\-artif \fImode\fR
+Set emulation mode of video artifacts in NTSC or PAL, respectively. The
+available values for \fImode\fR are:
+.RS
+.PD 0
+.TP
+.B none
+Disable video artifacts.
+.TP
+.B ntsc-old
+Simple emulation of NTSC composite video artifacts. Fast but inaccurate.
+.TP
+.B ntsc-new
+Improved emulation of NTSC artifacts. May look better than \fBntsc\-old\fR.
+.TP
+.B ntsc-full
+Full emulation of NTSC artifacts. Rather slow and available only in 16-
+and 32-bit video modes.
+.TP
+.B pal-simple
+Simple emulation of PAL chroma blending, without composite artifacts. Fast but
+inaccurate.
+.TP
+.B pal-blend
+Accurate emulation of PAL chroma blending, without composite artifacts.
+Available only in 16- and 32-bit video modes.
+.PD
+.RE
+.TP
 .BI \-artif\  mode
-Set artifacting mode 0-4 (0 = disable)
+Set artifacting mode 0-4 (0 = disable). Only for tv effects \fBntsc\-old\fR and \fBntsc\-new\fR.
 
 .TP
 .BR "\-colors\-preset standard" | "deep\-black" | vibrant
@@ -685,10 +738,25 @@ Enable sound
 Disable sound
 .TP
 .BI \-dsprate\  freq
-Set mixing frequency (Hz)
+Set sound output frequency in Hz.
+The default is 44100 Hz.
 .TP
-.BI \-snddelay\ time
-Set sound delay (milliseconds)
+.B \-audio16
+Set sound output format to 16-bit
+.TP
+.B \-audio8
+Set sound output format to 8-bit
+.TP
+.BI \-snd\-fragsize\  size
+Set size of the hardware sound buffer (fragment size).
+The value should be a power of 2.
+Setting to 0 (the default) causes the size to be set automatically.
+Higher values increase sound latency.
+Automatic setting should be OK in most cases.
+.TP
+.BI \-snddelay\  time
+Set sound latency in milliseconds. 
+Increase it if you experience gaps of silence during sound playback.
 
 .SS Curses Options
 
@@ -945,10 +1013,6 @@ Deactivates showing output of an 80 column hardware.
 
 
 .TP
-.B \-audio16
-Enable 16-bit sound output
-
-.TP
 .B \-nojoystick
 Do not initialize SDL joysticks
 .TP
@@ -958,13 +1022,6 @@ Define path to device used in LPTjoy 0. Available on linux-ia32 only.
 .BI \-joy1\  path\-to\-device
 Define path to device used in LPTjoy 1. Available on linux-ia32 only.
 
-.TP
-.B \-ntscemu
-Activate NTSC filter. This faithfully emulates NTSC composite
-video artifacts. \fB-artif\fR is not needed in this mode and will not work.
-.TP
-.B \-no\-ntscemu
-Disable NTSC filter.
 .TP
 \fB\-ntsc\-filter\-preset composite\fR|\fBsvideo\fR|\fBrgb\fR|\fBmonochrome\fR
 Use one of predefined NTSC filter adjustments.
@@ -1373,7 +1430,8 @@ Decrease color delay (Atari color adjustment potentiometer)
 Increase color delay
 
 .PP
-These keys work only in the NTSC filter mode (\fB\-ntscemu\fR):
+The following keys work only when the NTSC filter is enabled (\fB\-ntsc\-artif\fR
+set to \fBntsc\-full\fR):
 .RS
 .TP 15
 .BR LAlt + LShift + 7
