@@ -2,8 +2,8 @@ Source: atari800
 Section: contrib/otherosfs
 Priority: optional
 Maintainer: Antonin Kral <A.Kral@sh.cvut.cz>
-Build-Depends: libsdl1.2-dev, zlib1g-dev, libreadline-dev, libgl1-mesa-dev, libpng-dev, autotools-dev, dpkg-dev (>= 1.16.1~)
-Standards-Version: 3.9.5
+Build-Depends: libsdl1.2-dev, zlib1g-dev, libreadline-dev, libgl1-mesa-dev, libpng-dev, autotools-dev, dpkg-dev (>= 1.16.1~), autotools-dev
+Standards-Version: 3.9.6
 Vcs-Git: git://github.com/bobek/aranym800-debian.git
 Vcs-Browser: https://github.com/bobek/aranym800-debian
 
