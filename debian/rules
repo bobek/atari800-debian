@@ -11,6 +11,8 @@ ARCH := $(shell dpkg-architecture -qDEB_BUILD_ARCH)
 
 DPKG_EXPORT_BUILDFLAGS = 1
 include /usr/share/dpkg/buildflags.mk
+CFLAGS+=$(CPPFLAGS)
+CXXFLAGS+=$(CPPFLAGS)
 
 # Build the binary components and assemble the libraries
 # =====================================================================
@@ -76,7 +78,7 @@ binary-arch:		checkroot build
 	cp DOC/CREDITS debian/tmp/usr/share/doc/$(P)/CREDITS
 	cp DOC/README debian/tmp/usr/share/doc/$(P)/README
 	cp DOC/USAGE debian/tmp/usr/share/doc/$(P)/USAGE
-	gzip -9v debian/tmp/usr/share/doc/$(P)/*
+	gzip -9nv debian/tmp/usr/share/doc/$(P)/*
 
 # These are too small to gzip
 #
@@ -95,7 +97,7 @@ binary-arch:		checkroot build
 #
 	install -d debian/tmp/usr/share/man/man1
 	install -m 644 src/$(P).man debian/tmp/usr/share/man/man1/$(P).1
-	gzip -9 debian/tmp/usr/share/man/man1/$(P).1
+	gzip -9nv debian/tmp/usr/share/man/man1/$(P).1
 
 # install menu file
 #

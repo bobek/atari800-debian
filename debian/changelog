@@ -1,3 +1,10 @@
+atari800 (3.1.0-2) unstable; urgency=medium
+
+  * [8596bb2] update config.{sub, guess} (Closes: #762477)
+  * Thank Aurelien Jarno for report and Tobias Frost for a friendly NMU
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Mon, 11 Apr 2016 08:36:31 +0200
+
 atari800 (3.1.0-1) unstable; urgency=medium
 
   * [947c00c] Imported Upstream version 3.1.0
