@@ -1,8 +1,8 @@
 /*
  * jni.c - native functions exported to java
  *
- * Copyright (C) 2010 Kostas Nakos
- * Copyright (C) 2010 Atari800 development team (see DOC/CREDITS)
+ * Copyright (C) 2014 Kostas Nakos
+ * Copyright (C) 2014 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -44,12 +44,18 @@
 #include "graphics.h"
 #include "androidinput.h"
 
+#define PD2012_FNAME "PD2012.com"
+
 /* exports/imports */
 int *ovl_texpix;
 int ovl_texw;
 int ovl_texh;
 extern void SoundThread_Update(void *buf, int offs, int len);
-extern void Android_SoundInit(int rate, int bit16, int hq);
+extern void Android_SoundInit(int rate, int sizems, int bit16, int hq, int disableOSL);
+extern void Sound_Exit(void);
+extern void Sound_Pause(void);
+extern void Sound_Continue(void);
+extern int Android_osl_sound;
 
 struct audiothread {
 	UBYTE *sndbuf;
@@ -58,6 +64,7 @@ struct audiothread {
 static pthread_key_t audiothread_data;
 
 static char devb_url[512];
+
 
 static void JNICALL NativeGetOverlays(JNIEnv *env, jobject this)
 {
@@ -197,7 +204,7 @@ static jint JNICALL NativeRunAtariProgram(JNIEnv *env, jobject this,
 		CARTRIDGE_XEGS_128_DESC,
 		CARTRIDGE_OSS_M091_16_DESC,
 		CARTRIDGE_5200_NS_16_DESC,
-		CARTRIDGE_ATRAX_128_DESC,
+		CARTRIDGE_ATRAX_DEC_128_DESC,
 		CARTRIDGE_BBSB_40_DESC,
 		CARTRIDGE_5200_8_DESC,
 		CARTRIDGE_5200_4_DESC,
@@ -247,7 +254,10 @@ static jint JNICALL NativeRunAtariProgram(JNIEnv *env, jobject this,
 		CARTRIDGE_MEGA_2048_DESC,
 		CARTRIDGE_THECART_32M_DESC,
 		CARTRIDGE_THECART_64M_DESC,
-		CARTRIDGE_XEGS_8F_64_DESC
+		CARTRIDGE_XEGS_8F_64_DESC,
+		CARTRIDGE_ATRAX_128_DESC,
+		CARTRIDGE_ADAWLIAH_32_DESC,
+		CARTRIDGE_ADAWLIAH_64_DESC
 	};
 
 	const jbyte *img_utf = NULL;
@@ -289,7 +299,7 @@ static jint JNICALL NativeRunAtariProgram(JNIEnv *env, jobject this,
 			}
 		(*env)->SetObjectField(env, this, fid, arr);
 		ret = -2;
-	} else if (r == 0) {
+	} else if (r == AFILE_ERROR) {
 		Log_print("Cannot start image: %s", img_utf);
 		ret = -1;
 	} else
@@ -528,6 +538,16 @@ static void JNICALL NativePrefSoftjoy(JNIEnv *env, jobject this, jboolean softjo
 	}
 }
 
+static void config_PD(void)
+{
+	INPUT_mouse_mode = INPUT_MOUSE_PAD;
+	Android_Splitpct = 1.0f;
+	AndroidInput_JoyOvl.ovl_visible = FALSE;
+	Android_PlanetaryDefense = TRUE;
+	Android_Paddle = TRUE;
+	Android_ReversePddle = 3;
+}
+
 static void JNICALL NativePrefJoy(JNIEnv *env, jobject this, jboolean visible, int size, int opacity,
 								  jboolean righth, int deadband, jboolean midx, int anchor, int anchorx,
 								  int anchory, int grace, jboolean paddle, jboolean plandef)
@@ -548,24 +568,18 @@ static void JNICALL NativePrefJoy(JNIEnv *env, jobject this, jboolean visible, i
 	INPUT_mouse_mode = paddle ? INPUT_MOUSE_PAD : INPUT_MOUSE_OFF;
 	Android_PlanetaryDefense = FALSE;
 	Android_ReversePddle = 0;
-	if (plandef) {
-		INPUT_mouse_mode = INPUT_MOUSE_PAD;
-		Android_Splitpct = 1.0f;
-		AndroidInput_JoyOvl.ovl_visible = FALSE;
-		Android_PlanetaryDefense = TRUE;
-		Android_Paddle = TRUE;
-		Android_ReversePddle = 3;
-	}
+	if (plandef)
+		config_PD();
 
 	Android_SplitCalc();
 	Joyovl_Scale();
 	Joy_Reposition();
 }
 
-static void JNICALL NativePrefSound(JNIEnv *env, jobject this, int mixrate, jboolean sound16bit,
-									jboolean hqpokey)
+static void JNICALL NativePrefSound(JNIEnv *env, jobject this, int mixrate, int bufsizems,
+									jboolean sound16bit, jboolean hqpokey, jboolean disableOSL)
 {
-	Android_SoundInit(mixrate, sound16bit, hqpokey);
+	Android_SoundInit(mixrate, bufsizems, sound16bit, hqpokey, disableOSL);
 }
 
 static jboolean JNICALL NativeSetROMPath(JNIEnv *env, jobject this, jstring path)
@@ -575,7 +589,9 @@ static jboolean JNICALL NativeSetROMPath(JNIEnv *env, jobject this, jstring path
 
 	utf = (*env)->GetStringUTFChars(env, path, NULL);
 	SYSROM_FindInDir(utf, FALSE);
+    Log_print("sysrom %s %d", utf, SYSROM_FindInDir(utf, FALSE));
 	ret |= chdir(utf);
+    Log_print("sysrom %s %d", utf, SYSROM_FindInDir(utf, FALSE));
 	ret |= Atari800_InitialiseMachine();
 	(*env)->ReleaseStringUTFChars(env, path, utf);
 
@@ -594,6 +610,51 @@ static jstring JNICALL NativeGetURL(JNIEnv *env, jobject this)
 	return (*env)->NewStringUTF(env, dev_b_status.url);
 }
 
+static jboolean JNICALL NativeBootPD(JNIEnv *env, jobject this, jobjectArray img, jint sz)
+{
+	FILE *fp;
+	void *src;
+
+	fp = fopen(PD2012_FNAME, "wb");
+	if (!fp) {
+		Log_print("ERROR: Cannot open PD2012 for write");
+		return FALSE;
+	}
+	src = (*env)->GetByteArrayElements(env, img, NULL);
+	fwrite(src, 1, sz, fp);
+	fclose(fp);
+	(*env)->ReleaseByteArrayElements(env, img, src, JNI_ABORT);
+
+	config_PD();
+	NativeUnmountAll(env, this);
+	CARTRIDGE_Remove();
+	return AFILE_OpenFile(PD2012_FNAME, TRUE, 1, FALSE);
+}
+
+static jboolean JNICALL NativeOSLSound(JNIEnv *env, jobject this)
+{
+	return Android_osl_sound;
+}
+
+static jboolean JNICALL NativeOSLSoundPause(JNIEnv *env, jobject this, jboolean pause)
+{
+	if (pause)
+		Sound_Pause();
+	else
+		Sound_Continue();
+}
+
+static void JNICALL NativeOSLSoundInit(JNIEnv *env, jobject this)
+{
+	Sound_Initialise(0, NULL);
+}
+
+static void JNICALL NativeOSLSoundExit(JNIEnv *env, jobject this)
+{
+	Sound_Exit();
+}
+
+
 jint JNICALL JNI_OnLoad(JavaVM *jvm, void *reserved)
 {
 	JNINativeMethod main_methods[] = {
@@ -604,7 +665,7 @@ jint JNICALL JNI_OnLoad(JavaVM *jvm, void *reserved)
 		{ "NativePrefEmulation",	"(ZZZZZ)V",							NativePrefEmulation	  },
 		{ "NativePrefSoftjoy",		"(ZIIIIII[Ljava/lang/String;)V",	NativePrefSoftjoy	  },
 		{ "NativePrefJoy",			"(ZIIZIIZIIIZZ)V",					NativePrefJoy		  },
-		{ "NativePrefSound",		"(IZZ)V",							NativePrefSound		  },
+		{ "NativePrefSound",		"(IIZZZ)V",							NativePrefSound		  },
 		{ "NativeSetROMPath",		"(Ljava/lang/String;)Z",			NativeSetROMPath	  },
 		{ "NativeGetJoypos",		"()Ljava/lang/String;",				NativeGetJoypos		  },
 		{ "NativeInit",				"()Ljava/lang/String;",				NativeInit			  },
@@ -620,6 +681,10 @@ jint JNICALL JNI_OnLoad(JavaVM *jvm, void *reserved)
 		{ "NativeSoundInit",		"(I)V",								NativeSoundInit		  },
 		{ "NativeSoundUpdate",		"(II)V",							NativeSoundUpdate	  },
 		{ "NativeSoundExit",		"()V",								NativeSoundExit		  },
+		{ "NativeOSLSound",			"()Z",								NativeOSLSound		  },
+		{ "NativeOSLSoundInit",		"()V",								NativeOSLSoundInit	  },
+		{ "NativeOSLSoundExit",		"()V",								NativeOSLSoundExit	  },
+		{ "NativeOSLSoundPause",	"(Z)V",								NativeOSLSoundPause	  },
 	};
 	JNINativeMethod render_methods[] = {
 		{ "NativeRunFrame",			"()I",								NativeRunFrame		  },
@@ -634,6 +699,8 @@ jint JNICALL JNI_OnLoad(JavaVM *jvm, void *reserved)
 	};
 	JNINativeMethod pref_methods[] = {
 		{ "NativeSaveState",		"(Ljava/lang/String;)Z",			NativeSaveState		  },
+		{ "NativeBootPD",			"([BI)Z",							NativeBootPD		  },
+		{ "NativeOSLSound",			"()Z",								NativeOSLSound		  },
 	};
 	JNIEnv *env;
 	jclass cls;

@@ -1,3 +1,312 @@
+2017-06-25  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* DOC/NEWS, DOC/USAGE, android/jni/jni.c, atari800.man, cartridge.[ch], ui.c:
+  Original Atrax cartridges have address and data lines intermixed. The
+  existing CART Type 17: Atrax 128 KB cartridge was therefore not a type of
+  real cartridge, not usable for actual Atrax ROM dumps. I've renamed it to
+  "Decoded Atrax 128 KB cartridge" and added new "Type 68: Atrax 128 KB
+  cartridge" that supports real Atrax ROM dumps.
+
+
+2016-10-08  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* debian/compat, debian/changelog, debian/control, debian/rules,
+  debian/source/format: Updates from the official Debian package.
+
+
+2016-10-07  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* sdl/input.c: Fix segfault when using -nojoystick. Fix improper use of
+  SDL_PollEvent - caused keyboard input lag when moving a mouse or joystick.
+
+
+2015-11-12  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* pia.c: Fix convoluted "if" condition.
+
+
+2015-10-13  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* sio.c: Suggested by Avery Lee: Fix SIO error codes with SIO patch enabled.
+  This bug tripped up the original Sikor Soft's Ketchup disk, that relied on
+  attempting to read disk sector 720, which should return error 144 instead of
+  146.
+
+
+2015-09-23  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cassette.[ch], pia.c, screen.c, sio.[ch]: Some tapes try to read from disk
+  while the tape motor is on (case in point: Cubbyholes (APX)). This was not
+  emulated correctly - when a disk read was attempted while tape motor was on,
+  the value of the sio.c->TransferStatus variable would never revert to
+  SIO_CasReadWrite, and the tape loading would not continue. This is now
+  fixed. As a consequence, tape emulation ceased to use the variables
+  SIO_last_op, SIO_last_op_time and SIO_last_drive, so the related code in
+  screen.c and pia.c has been updated with that in mind.
+
+
+2015-08-26  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* atari.c: Avoid segfault on switching TV system while sound is disabled.
+
+
+2015-07-23  Christian Groessler  <chris@groessler.org>
+* dc/Makefile.dc, dc/atari_dc.c, dc/config.h, dc/displayscreen.S:
+  Rewrite of the screen update routines. DIRTYRECT isn't used
+  anymore. Now always the whole screen is updated. The new routines
+  use the Dreamcast processor's "store queue" which results in a
+  decent speed-up. The time spent updating the screen is now constant,
+  regardless of the screen changes. With little changes to the screen
+  more time is spent in the screen update routines, compared to
+  DIRTYRECT. But for the worst case (whole screen dirty) it's faster
+  than with DIRTYRECT. Boulder Dash in NTSC mode now doesn't jitter
+  when scrolling.
+  Add another option in Makefile.dc to use OCRAM (fast on-processor
+  RAM, cutting the data cache size in half) for the palette data. This
+  option is disabled for now since I didn't notice any difference in
+  emulation speed with it. Maybe if more "hot" variables are moved
+  into OCRAM it could make a difference.
+* dc/shlelf-ocram.xc: New File. Linker script to be used when using
+  the OCRAM option.
+
+
+2015-06-06  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* binload.c: Achim Haertel's patch fixes emulation crash when slow loading of
+  DOS binary files is turned off during such loading.
+* ui.c, DOC/USAGE: Rename "Slow loading of XEX" to "Slow booting of DOS binary
+  files" - XEX is just one of the possible extensions of such files.
+
+
+2015-06-02  Petr Stehlik <pstehlik@sophics.cz>
+* sdl/input.c: preliminary support for four real joysticks
+
+
+2015-05-29  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* binload.[ch], cfg.c, ui.c, DOC/CREDITS: Achim Haertel's patch
+  adds an option to slow down the loading of DOS binary files ran using "Run
+  Atari Program".
+* atari_curses.c, atari_falcon.c, atari_x11.c, amiga/amiga.c, javanvm/input.c,
+  sdl/input.c, win32/atari_win32.c, DOC/USAGE: Map F7 to temporarily stop slow
+  loading of DOS binary files, in addition to its standard "Break" key mapping.
+
+
+2015-05-27  Christian Groessler  <chris@groessler.org>
+* antic.c, cartridge.c, ide.c, input.c: Remove warnings when compiling
+  on FreeBSD/i386 10.1 with llvm.
+
+
+2015-05-10  Christian Groessler  <chris@groessler.org>
+* atari_x11.c (PLATFORM_Initialise): Preinitialize image_data buffer to
+  shut off valgrind warnings.
+* devices.c: Fix for bug #43: Prevent double close of entry in h_fp[]
+  array.
+
+
+2015-04-28  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* antic.c: Fix an infinite recursion with enabled NEW_CYCLE_EXACT, disabled
+  PAGED_ATTRIB, when the ANTIC display list is pointed to GTIA registers. The
+  recursion was: ANTIC_UpdateScanline -> draw_partial_scanline -> antic_load ->
+  MEMORY_CopyFromMem -> MEMORY_GetByte -> MEMORY_HwGetByte -> GTIA_GetByte ->
+  ANTIC_UpdateScanline.
+  Test case: Sky Writer XEX (length 16827, CRC32 9e0fd2e7) running in 400/800
+  mode.
+
+
+2015-04-27  Christian Groessler  <chris@groessler.org>
+* dc/atari_dc.c: Remove obsolete comments.
+* dc/version.h: Set A800DCBETA to 2 (2nd beta version).
+* DOC/TESTS.dc: New file. Lists tests which should be run before a new
+  Atari800DC release.
+* DOC/README.dc: Update.
+* DOC/CHANGES.dc: Update for Atari800DC 0.79beta2 release.
+
+
+2015-04-24  Christian Groessler  <chris@groessler.org>
+* dc/atari_dc.c: Parse "DOUBLE_BUFFERING" from atari800.cfg, setting the 'db_mode'
+  variable. Some other small cleanups.
+* dc/atari800.cfg: Add "DOUBLE_BUFFERING" entry.
+
+
+2015-04-16  Christian Groessler  <chris@groessler.org>
+* dc/atari_dc.c: Adapt controller and keyboard detection to new KOS version.
+
+
+2015-04-11  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* ui.c: Fix a bad cast that resulted in crash when changing display resolution.
+* artifact.c: Remove an invalid cast.
+
+
+2015-04-08  Christian Groessler  <chris@groessler.org>
+* sdl/input.c: Fix auto-repeat in emulator menu when using on-screen
+  keyboard emulation.
+
+
+2015-04-08  Christian Groessler  <chris@groessler.org>
+* dc/atari_dc.c: Fix paddle emulation (adapt to new KOS return values).
+  Add PLATFORM_Configure() to parse DISPLAY_X_ADJUST and
+  DISPLAY_Y_ADJUST. Remove warnings and some unused code.
+* dc/config.h: Add SUPPORTS_PLATFORM_CONFIGURE.
+* dc/atari800.cfg: Recreated with new emulator version.
+
+
+2015-04-01  Christian Groessler  <chris@groessler.org>
+* sound_oss.c: Fix sound device name for NetBSD and OpenBSD.
+
+
+2015-03-31  Christian Groessler  <chris@groessler.org>
+* dc/atari_dc.c: Fix crash when disconnecting the controller while being
+  in the emulator menu. Fix inaccessibility of controller when
+  disconnecting and reconnecting to a different port while being in the
+  keyboard emulation menu.
+
+
+2015-03-28  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* configure.ac: Fix displaying --enable-nonlinear_mixing twice on
+  ./configure --help. NONLINEAR_MIXING now defaults to enabled on all targets.
+
+
+2015-03-28  Christian Groessler  <chris@groessler.org>
+* ui.c, ui_basic.c: Adapt emulator menu to Dreamcast and
+  add DC specific menu items.
+* dc/atari_dc.c: Ditto. And fix swapped up/down direction when using the
+  controller joystick.
+
+
+2015-03-27  Christian Groessler  <chris@groessler.org>
+* dc/atari_dc.c (controller_kb): Fix auto-repeat in emulator menu.
+
+
+2015-03-23  Christian Groessler  <chris@groessler.org>
+* dc/atari_dc.c: The overridden console keys were never released, except
+  for START.
+
+
+2015-03-21  Perry McFarlane  <perry_m@mail.com>
+* gtia.c: Improve player/playfield collisions for NEW_CYCLE_EXACT
+
+
+2015-03-21  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* pokeysnd.[ch], DOC/NEWS: Fixed a crash with SYNCHRONIZED_SOUND, when enabling
+  stereo sound together with ENABLE_NEW_POKEY=0. Added comment to avoid future
+  mistakes.
+
+
+2015-03-20  Christian Groessler  <chris@groessler.org>
+* dc/atari_dc.c: Fix problem when trying to leave the on-screen keyboard
+  emulation menu when an override for the DC 'B' button is configured.
+  Some other unrelated code cleanups.
+
+
+2015-03-19  Christian Groessler  <chris@groessler.org>
+* dc/atari_dc.c: Don't inject a "START" button press when leaving the
+  on-screen keyboard.
+
+
+2015-03-17  Perry McFarlane  <perry_m@mail.com>
+* antic.c, artifact.c, colours.c, img_tape.c, log.[ch], monitor.c, screen.c,
+  sio.c, ui.[ch], sdl/video.c, sdl/video_gl.c, sdl/video_sw.c, win32/sound.c:
+  Fix gcc warnings, allow compiling with g++.
+
+
+2015-03-16  Perry McFarlane  <perry_m@mail.com>
+* pia.[ch], pokey.c, statesav.c: Fix PIA CA2/CB2 and irq. Bump
+  SAVE_VERSION_NUMBER to 8.
+
+
+2015-03-14  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* sio.c: With SIO patch enabled, replicate behaviour of the real SIO OS
+  routine. E.T. Phone Home! now works with SIO patch enabled.
+
+
+2015-03-11  Perry McFarlane  <perry_m@mail.com>
+* cpu.c: Fix opcodes 93, 9b, 9c, 9e, 9f (sha ind_y, shs, shy, shx, sha) page
+  crossing behaviour.
+
+
+2015-03-05  Christian Groessler  <chris@groessler.org>
+* ui.c (AboutEmulator): Change copyright year to 2015.
+* dc/version.h: Add a knob to switch "beta versions" on and off.
+* dc/atari_dc.c: Update on-screen keyboard to current interface of
+  ui_basic.c.
+
+
+2015-02-25  Christian Groessler  <chris@groessler.org>
+* configure.ac: If a non-standard location for the X11 libraries was given
+  (--x-libraries parameter), add this location to the run-time search path.
+
+
+2015-02-24  Perry McFarlane  <perry_m@mail.com>
+* bit3.c, DOC/NEWS: Invert bit3 cursor, add bit3 NEWS.
+
+
+2015-02-24  Christian Groessler  <chris@groessler.org>
+* atari_x11.c, configure.ac: Add support for palette update in X11 targets.
+* gtia.c: Fix compilation of basic (no video) target.
+
+
+2015-02-18  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* DOC/NEWS, DOC/USAGE: Updated for new release.
+
+
+2015-02-12  Petr Stehlik <pstehlik@sophics.cz>
+Committing fixes provided by Jools Wills in SF.net Bugs #41 and #42:
+* configure.ac: native building on RPi fixed
+* sdl/video.c: handle properly situation when any resolution is available
+
+
+2015-02-12  Perry McFarlane  <perry_m@mail.com>
+* DOC/ChangeLog, DOC/TODO, DOC/USAGE, atari.c, cartridge.c, cfg.c,
+  configure.ac, pbi.c, ui.c, videomode.[ch], sdl/input.c, sdl/palette.c,
+  sdl/video.[ch], sdl/video_gl.c, sdl/video_sw.c, bit3.[ch]: Emulate the Bit3
+  Full View 80 column card for the Atari 800.  Added more #ifdefs for AF80,
+  XEP80_EMULATION, PBI_PROTO80, and NTSC_FILTER.
+
+
+2015-02-07  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* cassette.c, img_tape.c: Minimal support for reading CAS "fsk " chunks, to
+  support some tape images of copy-protected original software, only with
+  unpatched SIO.
+
+
+2015-01-24  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* platform.h, sound_oss.c, sound.[ch], ui.c, dos/sound_dos.c, javanm/sound.c,
+  sdl/sound.c, atari800.man, DOC/USAGE: Improve usability: rename "Fragment
+  size" to "Hardware buffer size" and change the unit to milliseconds instead
+  of frames. Code for resizing the buffer to a power of 2 is now called in
+  platform-specific modules - the reason is not all sound backends require
+  such adjustment of the buffer length.
+
+
+2015-01-10  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* win32/msc/Makefile: Fixed incorrect file extensions.
+
+
+2014-11-28  Tomasz Krasuski  <kr0tki@poczta.onet.pl>
+* colours_ntsc.c, atari_ntsc/atari_ntsc_impl.h: Fixed mathematics in the YIQ
+  computations - although the resulting colors were correct, the names of i
+  and q variables were swapped in the sources.
+
+* colours_ntsc.c, colours_pal.c, colours.[ch], pal_blending.c, filter_ntsc.c,
+  atari_ntsc/atari_ntsc.c, DOC/NEWS: Fixed computation of gamma adjustment -
+  it is now applied to each of the three RGB channels separately.
+
+
+2014-09-22  Kostas Nakos  <knakos@gmail.com>
+
+* android/* : Bugfix no sound when machine is NTSC, small bugfixes and
+  workarounds for OSL sound. Prepare for release.
+
+
+2014-09-19  Kostas Nakos  <knakos@gmail.com>
+* configure.ac: Switch to android-9 environment for OpenSL ES support.
+
+* android/*: Add OpenSL ES native sound support for post-2.3 devices. Gained
+  accurate sound playback. Added bindings for capstoggle & atari keys.
+
+
+2014-09-16  Kostas Nakos  <knakos@gmail.com>
+* atari.c: Skip ROM file search as some android builds go in infinite loop
+  due to buggy platform implementation.
+
+* configure.ac: Updated to newer android toolchain.
+
+* android/*: Support for built-in Planetary Defense 2012 (courtesy and thanks
+  to Tom Hudson), miscellaneous fixes, update to newer android toolchain.
+
+
 ** 3.1.0 released on 2014-04-12
 
 2014-04-12  Petr Stehlik <pstehlik@sophics.cz>

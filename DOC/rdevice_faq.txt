@@ -355,7 +355,7 @@ SEND PROGRAM
 rs232t.c
 ------------------------------------------------
 
-/* $Id: rdevice_faq.txt,v 1.1 2003/09/16 21:58:08 joy Exp $
+/* $Id$
  *
  * RS232 library test
  * (c) by Christian Groessler, chris@groessler.org

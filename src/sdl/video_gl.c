@@ -26,6 +26,7 @@
 #include <SDL_opengl.h>
 
 #include "af80.h"
+#include "bit3.h"
 #include "artifact.h"
 #include "atari.h"
 #include "cfg.h"
@@ -59,7 +60,7 @@ int SDL_VIDEO_GL_pixel_format = SDL_VIDEO_GL_PIXEL_FORMAT_BGR16;
 static char const *library_path = NULL;
 
 /* Pointers to OpenGL functions, loaded dynamically during initialisation. */
-struct
+static struct
 {
 	void(APIENTRY*Viewport)(GLint,GLint,GLsizei,GLsizei);
 	void(APIENTRY*ClearColor)(GLfloat, GLfloat, GLfloat, GLfloat);
@@ -97,20 +98,42 @@ struct
 } gl;
 
 static void DisplayNormal(GLvoid *dest);
+#if NTSC_FILTER
 static void DisplayNTSCEmu(GLvoid *dest);
+#endif
+#ifdef XEP80_EMULATION
 static void DisplayXEP80(GLvoid *dest);
+#endif
+#ifdef PBI_PROTO80
 static void DisplayProto80(GLvoid *dest);
+#endif
+#ifdef AF80
 static void DisplayAF80(GLvoid *dest);
+#endif
+#ifdef BIT3
+static void DisplayBIT3(GLvoid *dest);
+#endif
 #ifdef PAL_BLENDING
 static void DisplayPalBlending(GLvoid *dest);
 #endif /* PAL_BLENDING */
 
 static void (* blit_funcs[VIDEOMODE_MODE_SIZE])(GLvoid *) = {
-	&DisplayNormal,
-	&DisplayNTSCEmu,
-	&DisplayXEP80,
-	&DisplayProto80,
-	&DisplayAF80
+	&DisplayNormal
+#if NTSC_FILTER
+	,&DisplayNTSCEmu
+#endif
+#ifdef XEP80_EMULATION
+	,&DisplayXEP80
+#endif
+#ifdef PBI_PROTO80
+	,&DisplayProto80
+#endif
+#ifdef AF80
+	,&DisplayAF80
+#endif
+#ifdef BIT3
+	,&DisplayBIT3
+#endif
 };
 
 /* GL textures - [0] is screen, [1] is scanlines. */
@@ -183,7 +206,11 @@ pixel_format_t const pixel_formats[4] = {
    -Wall -pedantic, but is the only possible solution. */
 static void (*GetGlFunc(const char* s))(void)
 {
-	void(*f)(void) = SDL_GL_GetProcAddress(s);
+/* suppress warning: ISO C forbids conversion of object pointer to function pointer type [-pedantic] */
+#ifdef __GNUC__
+	__extension__
+#endif
+	void(*f)(void) = (void(*)(void))SDL_GL_GetProcAddress(s);
 	if (f == NULL)
 		Log_print("Unable to get function pointer for %s\n",s);
 	return f;
@@ -504,7 +531,7 @@ static int InitGlPbo(void)
 
 static void ModeInfo(void)
 {
-	char *fullstring = (SDL_VIDEO_screen->flags & SDL_FULLSCREEN) == SDL_FULLSCREEN ? "fullscreen" : "windowed";
+	const char *fullstring = (SDL_VIDEO_screen->flags & SDL_FULLSCREEN) == SDL_FULLSCREEN ? "fullscreen" : "windowed";
 	Log_print("Video Mode: %dx%dx%d %s, pixel format: %s", SDL_VIDEO_screen->w, SDL_VIDEO_screen->h,
 		   SDL_VIDEO_screen->format->BitsPerPixel, fullstring, pixel_format_cfg_strings[SDL_VIDEO_GL_pixel_format]);
 }
@@ -538,18 +565,18 @@ static int SetVideoMode(int w, int h, int windowed)
 
 int SDL_VIDEO_GL_SetVideoMode(VIDEOMODE_resolution_t const *res, int windowed, VIDEOMODE_MODE_t mode, int rotate90)
 {
-	int new = SDL_VIDEO_screen == NULL; /* TRUE means the SDL/GL screen was not yet initialised */
+	int isnew = SDL_VIDEO_screen == NULL; /* TRUE means the SDL/GL screen was not yet initialised */
 	int context_updated = FALSE; /* TRUE means the OpenGL context has been recreated */
 	currently_rotated = rotate90;
 
 	/* Call SetVideoMode only when there was change in width, height, or windowed/fullscreen. */
-	if (new || SDL_VIDEO_screen->w != res->width || SDL_VIDEO_screen->h != res->height ||
+	if (isnew || SDL_VIDEO_screen->w != res->width || SDL_VIDEO_screen->h != res->height ||
 	    ((SDL_VIDEO_screen->flags & SDL_FULLSCREEN) == SDL_FULLSCREEN) == windowed) {
-		if (!new) {
+		if (!isnew) {
 			CleanGlContext();
 		}
 #if HAVE_WINDOWS_H
-		if (new && !windowed) {
+		if (isnew && !windowed) {
 			/* Switching from fullscreen software mode directly to fullscreen OpenGL mode causes
 			   glitches on Windows (eg. when switched to windowed mode, the window would spontaneously
 			   go back to fullscreen each time it loses and regains focus). We avoid the issue by
@@ -559,12 +586,12 @@ int SDL_VIDEO_GL_SetVideoMode(VIDEOMODE_resolution_t const *res, int windowed, V
 #endif /* HAVE_WINDOWS_H */
 		if (SetVideoMode(res->width, res->height, windowed))
 			/* Reinitialisation happened! Need to recreate GL context. */
-			new = TRUE;
+			isnew = TRUE;
 		if (!InitGlFunctions()) {
 			Log_print("Cannot use OpenGL - some functions are not provided.");
 			return FALSE;
 		}
-		if (new) {
+		if (isnew) {
 			GLint tex_size;
 			gl.GetIntegerv(GL_MAX_TEXTURE_SIZE, & tex_size);
 			if (tex_size < 1024) {
@@ -575,7 +602,7 @@ int SDL_VIDEO_GL_SetVideoMode(VIDEOMODE_resolution_t const *res, int windowed, V
 		pbo_available = InitGlPbo();
 		if (!pbo_available)
 			SDL_VIDEO_GL_pbo = FALSE;
-		if (new) {
+		if (isnew) {
 			Log_print("OpenGL initialized successfully. Version: %s", gl.GetString(GL_VERSION));
 			if (pbo_available)
 				Log_print("OpenGL Pixel Buffer Objects available.");
@@ -586,7 +613,7 @@ int SDL_VIDEO_GL_SetVideoMode(VIDEOMODE_resolution_t const *res, int windowed, V
 		context_updated = TRUE;
 	}
 
-	if (new) {
+	if (isnew) {
 		FreeTexture();
 		AllocTexture();
 	}
@@ -640,18 +667,19 @@ static void DisplayPalBlending(GLvoid *dest)
 {
 	Uint8 *screen = (Uint8 *)Screen_atari + Screen_WIDTH * VIDEOMODE_src_offset_top + VIDEOMODE_src_offset_left;
 	if (bpp_32)
-		PAL_BLENDING_Blit32((Uint32*)dest, screen, VIDEOMODE_actual_width, VIDEOMODE_src_width, VIDEOMODE_src_height, VIDEOMODE_src_offset_top % 2);
+		PAL_BLENDING_Blit32((ULONG*)dest, screen, VIDEOMODE_actual_width, VIDEOMODE_src_width, VIDEOMODE_src_height, VIDEOMODE_src_offset_top % 2);
 	else {
 		int pitch;
 		if (VIDEOMODE_actual_width & 0x01)
 			pitch = VIDEOMODE_actual_width / 2 + 1;
 		else
 			pitch = VIDEOMODE_actual_width / 2;
-		PAL_BLENDING_Blit16((Uint32*)dest, screen, pitch, VIDEOMODE_src_width, VIDEOMODE_src_height, VIDEOMODE_src_offset_top % 2);
+		PAL_BLENDING_Blit16((ULONG*)dest, screen, pitch, VIDEOMODE_src_width, VIDEOMODE_src_height, VIDEOMODE_src_offset_top % 2);
 	}
 }
 #endif /* PAL_BLENDING */
 
+#if NTSC_FILTER
 static void DisplayNTSCEmu(GLvoid *dest)
 {
 	(*pixel_formats[SDL_VIDEO_GL_pixel_format].ntsc_blit_func)(
@@ -663,7 +691,9 @@ static void DisplayNTSCEmu(GLvoid *dest)
 		dest,
 		VIDEOMODE_actual_width * (bpp_32 ? 4 : 2));
 }
+#endif
 
+#ifdef XEP80_EMULATION
 static void DisplayXEP80(GLvoid *dest)
 {
 	static int xep80Frame = 0;
@@ -681,7 +711,9 @@ static void DisplayXEP80(GLvoid *dest)
 	else
 		SDL_VIDEO_BlitXEP80_16((Uint32*)dest, screen, VIDEOMODE_actual_width / 2, VIDEOMODE_src_width, VIDEOMODE_src_height, SDL_PALETTE_buffer.bpp16);
 }
+#endif
 
+#ifdef PBI_PROTO80
 static void DisplayProto80(GLvoid *dest)
 {
 	int first_column = (VIDEOMODE_src_offset_left+7) / 8;
@@ -693,7 +725,9 @@ static void DisplayProto80(GLvoid *dest)
 	else
 		SDL_VIDEO_BlitProto80_16((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width/2, first_line, last_line, SDL_PALETTE_buffer.bpp16);
 }
+#endif
 
+#ifdef AF80
 static void DisplayAF80(GLvoid *dest)
 {
 	int first_column = (VIDEOMODE_src_offset_left+7) / 8;
@@ -710,6 +744,26 @@ static void DisplayAF80(GLvoid *dest)
 	else
 		SDL_VIDEO_BlitAF80_16((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width/2, first_line, last_line, blink, SDL_PALETTE_buffer.bpp16);
 }
+#endif
+
+#ifdef BIT3
+static void DisplayBIT3(GLvoid *dest)
+{
+	int first_column = (VIDEOMODE_src_offset_left+7) / 8;
+	int last_column = (VIDEOMODE_src_offset_left + VIDEOMODE_src_width) / 8;
+	int first_line = VIDEOMODE_src_offset_top;
+	int last_line = first_line + VIDEOMODE_src_height;
+	static int BIT3Frame = 0;
+	int blink;
+	BIT3Frame++;
+	if (BIT3Frame == 60) BIT3Frame = 0;
+	blink = BIT3Frame >= 30;
+	if (bpp_32)
+		SDL_VIDEO_BlitBIT3_32((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width, first_line, last_line, blink, SDL_PALETTE_buffer.bpp32);
+	else
+		SDL_VIDEO_BlitBIT3_16((Uint32*)dest, first_column, last_column, VIDEOMODE_actual_width/2, first_line, last_line, blink, SDL_PALETTE_buffer.bpp16);
+}
+#endif
 
 void SDL_VIDEO_GL_DisplayScreen(void)
 {

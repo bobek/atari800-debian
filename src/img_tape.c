@@ -50,6 +50,7 @@ struct IMG_TAPE_t {
 	ULONG save_gap; /* Length of the IRG before the currently written block */
 	int next_blockbyte; /* Index of the byte in this block that will be read next (counted from 0) */
 	unsigned int current_block; /* Number of the currently-read/written block (counted from 0) */
+	int block_is_fsk; /* FALSE - current chunk's type  is "data", otherwise "fsk " */
 	int block_length; /* Length of the block currently held in BUFFER */
 	int num_blocks; /* Number of data blocks in the whole file */
 	ULONG block_offsets[MAX_BLOCKS]; /* File offsets for each data block*/
@@ -80,6 +81,12 @@ second).
 -data record - identifier "data", length is length of the data block (usually
 $84 as used by the OS), aux is length of mark tone (including leader and gaps)
 just before the record data in milliseconds.
+-raw signal stream - identifier "fsk ", length and aux the same as in "data"
+chunk. Each 2 bytes in this chunk are a 16-bit number that represents length of
+a MARK or SPACE signal in 1/10s of milliseconds. (So, the chunk contains
+length/2 words.) The chunk starts with the SPACE signal (first 2 bytes), then
+the MARK signal (next 2 bytes) and alternates between SPACE and MARK till the
+end of the chunk.
 */
 
 int IMG_TAPE_FileSupported(UBYTE const start_bytes[4])
@@ -139,7 +146,7 @@ IMG_TAPE_t *IMG_TAPE_Open(char const *filename, int *writable, char const **desc
 	IMG_TAPE_t *img;
 	CAS_Header header;
 
-	img = Util_malloc(sizeof(IMG_TAPE_t));
+	img = (IMG_TAPE_t *)Util_malloc(sizeof(IMG_TAPE_t));
 	/* Check if the file is writable. If not, recording will be disabled. */
 	img->file = fopen(filename, "rb+");
 	*writable = img->file != NULL;
@@ -189,17 +196,21 @@ IMG_TAPE_t *IMG_TAPE_Open(char const *filename, int *writable, char const **desc
 			if (fread(&header, 1, 8, img->file) != 8)
 				break;
 			length = header.length_lo + (header.length_hi << 8);
-			if (header.identifier[0] == 'b'
-			 && header.identifier[1] == 'a'
-			 && header.identifier[2] == 'u'
-			 && header.identifier[3] == 'd') {
+			if (header.identifier[0] == 'b' &&
+			    header.identifier[1] == 'a' &&
+			    header.identifier[2] == 'u' &&
+			    header.identifier[3] == 'd') {
 				baudrate=header.aux_lo + (header.aux_hi << 8);
 				img->block_offsets[blocks] += length + 8;
 			}
-			else if (header.identifier[0] == 'd'
-			 && header.identifier[1] == 'a'
-			 && header.identifier[2] == 't'
-			 && header.identifier[3] == 'a') {
+			else if ((header.identifier[0] == 'd' &&
+			          header.identifier[1] == 'a' &&
+			          header.identifier[2] == 't' &&
+			          header.identifier[3] == 'a') ||
+			         (header.identifier[0] == 'f' &&
+			          header.identifier[1] == 's' &&
+			          header.identifier[2] == 'k' &&
+			          header.identifier[3] == ' ')) {
 				img->block_baudrates[blocks] = baudrate;
 				if (++blocks >= MAX_BLOCKS) {
 					--blocks;
@@ -227,7 +238,7 @@ IMG_TAPE_t *IMG_TAPE_Open(char const *filename, int *writable, char const **desc
 	img->next_blockbyte = 0;
 	img->block_length = 0;
 	img->current_block = 0;
-	img->buffer = Util_malloc((img->buffer_size = DEFAULT_BUFFER_SIZE) * sizeof(UBYTE));
+	img->buffer = (UBYTE *)Util_malloc((img->buffer_size = DEFAULT_BUFFER_SIZE) * sizeof(UBYTE));
 	img->was_writing = FALSE;
 
 	return img;
@@ -277,7 +288,7 @@ IMG_TAPE_t *IMG_TAPE_Create(char const *filename, char const *description)
 		return NULL;
 	}
 
-	img = Util_malloc(sizeof(IMG_TAPE_t));
+	img = (IMG_TAPE_t *)Util_malloc(sizeof(IMG_TAPE_t));
 	img->file = file;
 	if (description != NULL)
 		Util_strlcpy(img->description, description, CASSETTE_DESCRIPTION_MAX);
@@ -289,7 +300,7 @@ IMG_TAPE_t *IMG_TAPE_Create(char const *filename, char const *description)
 	img->current_block = 0;
 	img->num_blocks = 0;
 	img->block_offsets[0] = strlen(description) + 16;
-	img->buffer = Util_malloc((img->buffer_size = DEFAULT_BUFFER_SIZE) * sizeof(UBYTE));
+	img->buffer = (UBYTE *)Util_malloc((img->buffer_size = DEFAULT_BUFFER_SIZE) * sizeof(UBYTE));
 	img->was_writing = TRUE;
 
 	return img;
@@ -303,7 +314,7 @@ static void EnlargeBuffer(IMG_TAPE_t *file, size_t size)
 		file->buffer_size *= 2;
 		if (file->buffer_size < size)
 			file->buffer_size = size;
-		file->buffer = Util_realloc(file->buffer, file->buffer_size * sizeof(UBYTE));
+		file->buffer = (UBYTE *)Util_realloc(file->buffer, file->buffer_size * sizeof(UBYTE));
 	}
 }
 
@@ -326,10 +337,16 @@ static int ReadNextRecord(IMG_TAPE_t *file, int *gap)
 	if (file->isCAS) {
 		CAS_Header header;
 
-		/* While reading a block, offset by 4 to skip its 4-byte name (assume it's "data") */
-		if (fseek(file->file, file->block_offsets[file->current_block] + 4, SEEK_SET) != 0
-		    || fread(&header.length_lo, 1, 4, file->file) < 4)
+		if (fseek(file->file, file->block_offsets[file->current_block], SEEK_SET) != 0
+		    || fread(&header, 1, 8, file->file) < 8)
 			return FALSE;
+
+		/* Determine chunk type - can be either "fsk " or "data". */
+		file->block_is_fsk = header.identifier[0] == 'f' &&
+		                     header.identifier[1] == 's' &&
+		                     header.identifier[2] == 'k' &&
+		                     header.identifier[3] == ' ';
+
 		length = header.length_lo + (header.length_hi << 8);
 		*gap = header.aux_lo + (header.aux_hi << 8);
 		/* read block into buffer */
@@ -338,6 +355,7 @@ static int ReadNextRecord(IMG_TAPE_t *file, int *gap)
 			return FALSE;
 	}
 	else {
+		file->block_is_fsk = FALSE;
 		length = 132;
 		/* Don't enlarge buffer - its default size is at least 132. */
 		*gap = (file->current_block == 0 ? 19200 : 260);
@@ -369,13 +387,13 @@ static int ReadNextRecord(IMG_TAPE_t *file, int *gap)
 
 int IMG_TAPE_Read(IMG_TAPE_t *file, unsigned int *duration, int *is_gap, UBYTE *byte)
 {
-	int gap;
 	if (file->was_writing) {
 		CassetteFlush(file);
 		file->was_writing = FALSE;
 	}
 	if (file->next_blockbyte >= file->block_length) {
 		/* Buffer is exhausted, load next record. */
+		int gap;
 
 		if (!ReadNextRecord(file, &gap))
 			return FALSE;
@@ -387,10 +405,21 @@ int IMG_TAPE_Read(IMG_TAPE_t *file, unsigned int *duration, int *is_gap, UBYTE *
 			return TRUE;
 		}
 	}
-	*byte = file->buffer[file->next_blockbyte++];
-	*is_gap = FALSE;
-	/* Next event will be after 10 bits of data gets loaded. */
-	*duration = 10 * 1789790 / (file->isCAS ? file->block_baudrates[file->current_block] : 600);
+
+	if (file->block_is_fsk) {
+		/* Compose a 16-bit word with length of a signal in 1/10 of ms. */
+		unsigned int len = file->buffer[file->next_blockbyte++];
+		len |= ((unsigned int)file->buffer[file->next_blockbyte++]) << 8;
+
+		/* Convert len from 1/10ms to CPU ticks. */
+		*duration = len * 178 + len * 9790 / 10000; /* (len * 1789790 / 10000), avoiding overflow */
+		*is_gap = TRUE;
+	} else {
+		*byte = file->buffer[file->next_blockbyte++];
+		*is_gap = FALSE;
+		/* Next event will be after 10 bits of data gets loaded. */
+		*duration = 10 * 1789790 / (file->isCAS ? file->block_baudrates[file->current_block] : 600);
+	}
 	return TRUE;
 }
 
@@ -469,29 +498,36 @@ void IMG_TAPE_Seek(IMG_TAPE_t *file, unsigned int position)
 
 int IMG_TAPE_SerinStatus(IMG_TAPE_t *file, int event_time_left)
 {
-	int bit = 0;
-
 	if (file->was_writing || file->next_blockbyte == 0)
 		return 1;
-	/* exam rate; if time_to_irq < duration of one byte */
-	if (event_time_left <
-		10 * 1789790 / (file->isCAS ? file->block_baudrates[file->current_block] : 600) - 1) {
-		bit = event_time_left / (1789790 / (file->isCAS ? file->block_baudrates[file->current_block] : 600));
+	if (file->block_is_fsk) {
+		/* Signal can be computed from current position in the block -
+		   first 2 bytes area SPACE, each next 2 bytes alternate between MARK
+		   and SPACE. */
+		return (~(file->next_blockbyte / 2) & 1);
+	} else {
+		int bit = 0; /* 0: stop bit, 1: 7th bit, ..., 8: 0th bit, 9: start bit */
+
+		/* exam rate; if time_to_irq < duration of one byte */
+		if (event_time_left <
+			10 * 1789790 / (file->isCAS ? file->block_baudrates[file->current_block] : 600) - 1) {
+			bit = event_time_left / (1789790 / (file->isCAS ? file->block_baudrates[file->current_block] : 600));
+		}
+		else {
+			bit = 0;
+		}
+
+		/* if stopbit or out of range, return mark tone */
+		if ((bit <= 0) || (bit > 9))
+			return 1;
+
+		/* if start bit, return space tone */
+		if (bit == 9)
+			return 0;
+
+		/* eval tone to return */
+		return (file->buffer[file->next_blockbyte - 1] >> (8 - bit)) & 1;
 	}
-	else {
-		bit = 0;
-	}
-
-	/* if stopbit or out of range, return mark tone */
-	if ((bit <= 0) || (bit > 9))
-		return 1;
-
-	/* if start bit, return space tone */
-	if (bit == 9)
-		return 0;
-
-	/* eval tone to return */
-	return (file->buffer[file->next_blockbyte - 1] >> (8 - bit)) & 1;
 }
 
 int IMG_TAPE_SkipToData(IMG_TAPE_t *file, int ms)
@@ -503,11 +539,17 @@ int IMG_TAPE_SkipToData(IMG_TAPE_t *file, int ms)
 
 	while (ms > 0) {
 		if (file->next_blockbyte < file->block_length) {
-			int bytes = ms * (file->isCAS ? file->block_baudrates[file->current_block] : 600) / 1000 / 10;
-			if (bytes > file->block_length - file->next_blockbyte)
-				bytes = file->block_length - file->next_blockbyte;
-			file->next_blockbyte += bytes;
-			ms -= bytes * 10 * 1000 / (file->isCAS ? file->block_baudrates[file->current_block] : 600);
+			if (file->block_is_fsk) {
+				/* FSK blocks are not supported during reads with patched SIO,
+				   and skipped as a whole. */
+				file->next_blockbyte = file->block_length;
+			} else {
+				int bytes = ms * (file->isCAS ? file->block_baudrates[file->current_block] : 600) / 1000 / 10;
+				if (bytes > file->block_length - file->next_blockbyte)
+					bytes = file->block_length - file->next_blockbyte;
+				file->next_blockbyte += bytes;
+				ms -= bytes * 10 * 1000 / (file->isCAS ? file->block_baudrates[file->current_block] : 600);
+			}
 			continue;
 		}
 		else {
@@ -528,6 +570,7 @@ int IMG_TAPE_ReadToMemory(IMG_TAPE_t *file, UWORD dest_addr, int length)
 		CassetteFlush(file);
 		file->was_writing = FALSE;
 	}
+
 	read_length = file->block_length - file->next_blockbyte;
 
 	if (read_length == 0) {
@@ -536,9 +579,13 @@ int IMG_TAPE_ReadToMemory(IMG_TAPE_t *file, UWORD dest_addr, int length)
 		if (!ReadNextRecord(file, &gap))
 			/* EOF or read error */
 			return -1;
-		file->block_length = read_length;
 		file->next_blockbyte = 0;
 	}
+	if (file->block_is_fsk)
+		/* FSK blocks are not supported during reads with patched SIO, and
+		   always cause read failure. */
+		return FALSE;
+
 	/* Copy record to memory, excluding the checksum byte if it exists. */
 	MEMORY_CopyToMem(file->buffer + file->next_blockbyte, dest_addr, read_length >= length ? length : read_length);
 	file->next_blockbyte += (read_length >= length + 1 ? length + 1 : read_length);

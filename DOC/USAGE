@@ -24,8 +24,10 @@ emulator acts as if the tape recorder's "Play" button was permanently pressed,
 so that a tape rolls automatically when an Atari program turns the tape motor
 on.
 
-Turning the SIO patch on speeds up the tape load and save operations. Note
-that toggling the SIO patch during any tape operation will cause it to fail.
+Turning the SIO patch on speeds up the tape load and save operations. Some
+tapes, however, are copy-protected an will load correctly only with the SIO
+patch being disabled. Note that toggling the SIO patch during any tape
+operation will cause it to fail.
 
 A tape image can be rewound to a specific part (block), to allow loading
 from tape images which contain multiple programs one-after-another. After
@@ -142,12 +144,12 @@ Command line options
 -basic                Turn on Atari BASIC ROM
 
 -cart <filename>      Insert cartridge (CART or raw format)
--cart-type <0..67>    Select type of cartridge inserted with -cart. 0 means
+-cart-type <0..70>    Select type of cartridge inserted with -cart. 0 means
                       no cartridge, and other values indicate a specific
                       cartridge type as in cart.txt.
 -cart2 <filename>     Insert second cartridge (CART or raw format)
                       Only if first cartridge is SpartaDOS X (64 or 128)
--cart2-type <0..67>   Similar to -cart-type. Select type of cartridge inserted
+-cart2-type <0..70>   Similar to -cart-type. Select type of cartridge inserted
                       with -cart2.
 -cart-autoreboot      Automatically reboot after cartridge inserting/removing
                       (doesn't affect the piggyback cartridge)
@@ -248,8 +250,8 @@ Command line options
 -dsprate <freq>       Set sound output frequency in Hz
 -audio16              Set sound output format to 16-bit
 -audio8               Set sound output format to 8-bit
--snd-fragsize <num>   Set size of the hardware sound buffer (fragment size)
--snddelay <time>      Set sound latency in milliseconds
+-snd-buflen <ms>      Set length of the hardware sound buffer in milliseconds
+-snddelay <ms>        Set sound latency in milliseconds
 
 -ide <file>           Enable IDE emulation
 -ide_debug            Enable IDE Debug output
@@ -352,7 +354,8 @@ SDL version options
                       Can be set to values such as 4:3, 16:9, 1.25:1, etc.
                       "auto" tries to autodetect the ratio.
 -80column             Display output of 80 column hardware. Usable only in
-                      conjunction with one of -xep80, -proto80, -af80
+                      conjunction with one of -xep80, -proto80, -af80, -bit3.
+                      -bit3 uses software control and does not need this.
 -no-80column          Display normal screen instead of 80 column output
 
 -nojoystick           Do not initialize joysticks
@@ -385,6 +388,7 @@ The following 7 items are only for -ntsc-artif set to ntsc-full:
 -xep80                Emulate the XEP80
 -xep80port <n>        Use XEP80 on joystick port <n>
 -af80                 Emulate the Austin Franklin 80 column board
+-bit3                 Emulate the Bit3 Full View 80 column board
 
 
 X11 options
@@ -418,7 +422,7 @@ F4                   Start key
 F5                   Reset key ("warm reset")
 Shift+F5             Reboot ("cold reset")
 F6                   Help key (XL/XE only)
-F7                   Break key
+F7                   Break key / Pause during DOS file booting (**)
 F8                   Enter monitor
 F9                   Exit emulator
 F10                  Save screenshot
@@ -476,6 +480,9 @@ Paddles, Atari touch tablet, Koala pad, light pen, light gun,
 ST/Amiga mouse, Atari trak-ball, joystick and Atari 5200 analog
 controller are emulated using mouse on ports that support it.
 See the options above for how to enable mouse.
+
+(**) When Slow booting of DOS binary files is enabled, holding F7 during
+loading pauses the booting process.
 
 
 Amiga keyboard, joystick and other controllers
@@ -575,7 +582,8 @@ LAlt+LShift+[     Decrease scanlines percentage
 LAlt+[            Increase scanlines percentage
 LAlt+]            Toggle NTSC composite/S-Video/RGB/monochrome settings
  
-LAlt+Shift+X      Enable/disable 80 column screen (for -xep80/-af80/-proto80)
+LAlt+Shift+X      Enable/disable 80 column screen (for -xep80/-af80/-proto80/
+-bit3)
 
 Apart from standard joysticks (handled by the SDL) up to two keyboard joysticks
 are supported. The keys used for joystick directions and the trigger can be

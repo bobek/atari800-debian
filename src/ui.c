@@ -2,7 +2,7 @@
  * ui.c - main user interface
  *
  * Copyright (C) 1995-1998 David Firth
- * Copyright (C) 1998-2014 Atari800 development team (see DOC/CREDITS)
+ * Copyright (C) 1998-2015 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -75,6 +75,9 @@
 #ifdef AF80
 #include "af80.h"
 #endif /* AF80 */
+#ifdef BIT3
+#include "bit3.h"
+#endif /* BIT3 */
 #ifdef SOUND
 #include "pokeysnd.h"
 #include "sndsave.h"
@@ -145,8 +148,10 @@ extern int db_mode;
 extern int screen_tv_mode;
 extern int emulate_paddles;
 extern int glob_snd_ena;
+extern void JoystickConfiguration(void);
 extern void ButtonConfiguration(void);
 extern void AboutAtariDC(void);
+extern void ScreenPositionConfiguration(void);
 extern void update_vidmode(void);
 extern void update_screen_updater(void);
 #ifdef HZ_TEST
@@ -992,7 +997,7 @@ int UI_SelectCartType(int k)
 		UI_MENU_ACTION(CARTRIDGE_XEGS_128, CARTRIDGE_XEGS_128_DESC),
 		UI_MENU_ACTION(CARTRIDGE_OSS_M091_16, CARTRIDGE_OSS_M091_16_DESC),
 		UI_MENU_ACTION(CARTRIDGE_5200_NS_16, CARTRIDGE_5200_NS_16_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ATRAX_128, CARTRIDGE_ATRAX_128_DESC),
+		UI_MENU_ACTION(CARTRIDGE_ATRAX_DEC_128, CARTRIDGE_ATRAX_DEC_128_DESC),
 		UI_MENU_ACTION(CARTRIDGE_BBSB_40, CARTRIDGE_BBSB_40_DESC),
 		UI_MENU_ACTION(CARTRIDGE_5200_8, CARTRIDGE_5200_8_DESC),
 		UI_MENU_ACTION(CARTRIDGE_5200_4, CARTRIDGE_5200_4_DESC),
@@ -1043,6 +1048,9 @@ int UI_SelectCartType(int k)
 		UI_MENU_ACTION(CARTRIDGE_THECART_32M, CARTRIDGE_THECART_32M_DESC),
 		UI_MENU_ACTION(CARTRIDGE_THECART_64M, CARTRIDGE_THECART_64M_DESC),
 		UI_MENU_ACTION(CARTRIDGE_XEGS_8F_64, CARTRIDGE_XEGS_8F_64_DESC),
+		UI_MENU_ACTION(CARTRIDGE_ATRAX_128, CARTRIDGE_ATRAX_128_DESC),
+		UI_MENU_ACTION(CARTRIDGE_ADAWLIAH_32, CARTRIDGE_ADAWLIAH_32_DESC),
+		UI_MENU_ACTION(CARTRIDGE_ADAWLIAH_64, CARTRIDGE_ADAWLIAH_64_DESC),
 		UI_MENU_END
 	};
 
@@ -1885,10 +1893,15 @@ static void AtariSettings(void)
 #endif /* XEP80_EMULATION */
 		UI_MENU_CHECK(3, "SIO patch (fast disk access):"),
 		UI_MENU_CHECK(17, "Turbo (F12):"),
+		UI_MENU_CHECK(19, "Slow booting of DOS binary files:"),
 		UI_MENU_ACTION(4, "H: device (hard disk):"),
 		UI_MENU_CHECK(5, "P: device (printer):"),
 #ifdef R_IO_DEVICE
+#ifdef DREAMCAST
+		UI_MENU_CHECK(6, "R: device (using Coder's Cable):"),
+#else
 		UI_MENU_CHECK(6, "R: device (Atari850 via net):"),
+#endif
 #endif
 		UI_MENU_FILESEL_PREFIX(7, "H1: ", Devices_atari_h_dir[0]),
 		UI_MENU_FILESEL_PREFIX(8, "H2: ", Devices_atari_h_dir[1]),
@@ -1898,8 +1911,10 @@ static void AtariSettings(void)
 		UI_MENU_ACTION_PREFIX(12, "Print command: ", Devices_print_command),
 		UI_MENU_SUBMENU(13, "System ROM settings"),
 		UI_MENU_SUBMENU(14, "Configure directories"),
+#ifndef DREAMCAST
 		UI_MENU_ACTION(15, "Save configuration file"),
 		UI_MENU_CHECK(16, "Save configuration on exit:"),
+#endif
 		UI_MENU_END
 	};
 	char tmp_command[256];
@@ -1916,6 +1931,7 @@ static void AtariSettings(void)
 		FindMenuItem(menu_array, 18)->suffix = xep80_menu_array[XEP80_enabled ? XEP80_port + 1 : 0].item;
 #endif /* XEP80_EMULATION */
 		SetItemChecked(menu_array, 17, Atari800_turbo);
+		SetItemChecked(menu_array, 19, BINLOAD_slow_xex_loading);
 		FindMenuItem(menu_array, 4)->suffix = Devices_enable_h_patch ? (Devices_h_read_only ? "Read-only" : "Read/write") : "No ";
 		SetItemChecked(menu_array, 5, Devices_enable_p_patch);
 #ifdef R_IO_DEVICE
@@ -1983,12 +1999,14 @@ static void AtariSettings(void)
 		case 14:
 			ConfigureDirectories();
 			break;
+#ifndef DREAMCAST
 		case 15:
 			UI_driver->fMessage(CFG_WriteConfig() ? "Configuration file updated" : "Error writing configuration file", 1);
 			break;
 		case 16:
 			CFG_save_on_exit = !CFG_save_on_exit;
 			break;
+#endif
 		case 17:
 			Atari800_turbo = !Atari800_turbo;
 			break;
@@ -2007,6 +2025,9 @@ static void AtariSettings(void)
 			}
 			break;
 #endif /* XEP80_EMULATION */
+		case 19:
+			BINLOAD_slow_xex_loading = !BINLOAD_slow_xex_loading;
+			break;
 		default:
 			ESC_UpdatePatches();
 			return;
@@ -2053,8 +2074,8 @@ static int ChooseVideoResolution(int current_res)
 
 	unsigned int i;
 
-	menu_array = Util_malloc((num_res+1) * sizeof(UI_tMenuItem));
-	res_strings = Util_malloc(num_res * sizeof(char(*[10])));
+	menu_array = (UI_tMenuItem *)Util_malloc((num_res+1) * sizeof(UI_tMenuItem));
+	res_strings = (char (*)[10])Util_malloc(num_res * sizeof(char[10]));
 
 	for (i = 0; i < num_res; i ++) {
 		VIDEOMODE_CopyResolutionName(i, res_strings[i], 10);
@@ -2717,7 +2738,7 @@ static void DisplaySettings(void)
 	};
 	static char const * const colours_preset_names[] = { "Standard", "Deep black", "Vibrant", "Custom" };
 #endif
-	
+
 	static char refresh_status[16];
 #ifdef RPI
 	static char op_zoom_string[16];
@@ -2732,7 +2753,7 @@ static void DisplaySettings(void)
 #endif /* RPI */
 		UI_MENU_SUBMENU_SUFFIX(0, "Video artifacts:", NULL),
 		UI_MENU_SUBMENU_SUFFIX(11, "NTSC artifacting mode:", NULL),
-#if SUPPORTS_CHANGE_VIDEOMODE && (defined(XEP80_EMULATION) || defined(PBI_PROTO80) || defined(AF80))
+#if SUPPORTS_CHANGE_VIDEOMODE && (defined(XEP80_EMULATION) || defined(PBI_PROTO80) || defined(AF80) || defined(BIT3))
 		UI_MENU_CHECK(25, "Show output of 80 column device:"),
 #endif
 		UI_MENU_SUBMENU_SUFFIX(1, "Current refresh rate:", refresh_status),
@@ -2751,6 +2772,7 @@ static void DisplaySettings(void)
 #ifdef HZ_TEST
 		UI_MENU_ACTION(10, "DO HZ TEST:"),
 #endif
+		UI_MENU_ACTION(32, "Screen position configuration:"),
 #endif
 #if SUPPORTS_PLATFORM_PALETTEUPDATE
 		UI_MENU_SUBMENU_SUFFIX(12, "Color preset: ", NULL),
@@ -2813,7 +2835,7 @@ static void DisplaySettings(void)
 		}
 #endif
 
-#if SUPPORTS_CHANGE_VIDEOMODE && (defined(XEP80_EMULATION) || defined(PBI_PROTO80) || defined(AF80))
+#if SUPPORTS_CHANGE_VIDEOMODE && (defined(XEP80_EMULATION) || defined(PBI_PROTO80) || defined(AF80) || defined(BIT3))
 		SetItemChecked(menu_array, 25, VIDEOMODE_80_column);
 #endif
 		snprintf(refresh_status, sizeof(refresh_status), "1:%-2d", Atari800_refresh_rate);
@@ -2860,7 +2882,7 @@ static void DisplaySettings(void)
 #endif /* PAL_BLENDING */
 			option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, ARTIFACT_mode, artif_menu_array, NULL);
 			if (option2 >= 0)
-				ARTIFACT_Set(option2);
+				ARTIFACT_Set((ARTIFACT_t)option2);
 			break;
 		case 11:
 			/* The artifacting mode option is only active for ANTIC artifacting. */
@@ -2873,7 +2895,7 @@ static void DisplaySettings(void)
 				}
 			}
 			break;
-#if SUPPORTS_CHANGE_VIDEOMODE && (defined(XEP80_EMULATION) || defined(PBI_PROTO80) || defined(AF80))
+#if SUPPORTS_CHANGE_VIDEOMODE && (defined(XEP80_EMULATION) || defined(PBI_PROTO80) || defined(AF80) || defined(BIT3) )
 		case 25:
 			VIDEOMODE_Toggle80Column();
 			if (TRUE
@@ -2886,6 +2908,9 @@ static void DisplaySettings(void)
 #ifdef AF80
 			    && !AF80_enabled
 #endif /* AF80 */
+#ifdef BIT3
+			    && !BIT3_enabled
+#endif /* BIT3 */
 			   )
 				UI_driver->fMessage("No 80 column hardware available now.", 1);
 			break;
@@ -2959,12 +2984,15 @@ static void DisplaySettings(void)
 			Screen_EntireDirty();
 			break;
 #endif
+		case 32:
+			ScreenPositionConfiguration();
+			break;
 #endif /* DREAMCAST */
 #if SUPPORTS_PLATFORM_PALETTEUPDATE
 		case 12:
 			option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, colours_preset, colours_preset_menu_array, NULL);
 			if (option2 >= 0) {
-				Colours_SetPreset(option2);
+				Colours_SetPreset((Colours_preset_t)option2);
 				Colours_Update();
 				for (i=0; i<6; i++) {
 					UpdateColourControl(i);
@@ -3521,7 +3549,8 @@ static void ControllerConfiguration(void)
 		UI_MENU_CHECK(5, "Virtual joystick:"),
 #elif defined(DREAMCAST)
 		UI_MENU_CHECK(9, "Emulate Paddles:"),
-		UI_MENU_ACTION(10, "Button configuration"),
+		UI_MENU_ACTION(10, "Joystick/D-Pad configuration"),
+		UI_MENU_ACTION(11, "Button configuration"),
 #else
 		UI_MENU_SUBMENU_SUFFIX(2, "Mouse device: ", NULL),
 		UI_MENU_SUBMENU_SUFFIX(3, "Mouse port:", mouse_port_status),
@@ -3603,6 +3632,9 @@ static void ControllerConfiguration(void)
 			emulate_paddles = !emulate_paddles;
 			break;
 		case 10:
+			JoystickConfiguration();
+			break;
+		case 11:
 			ButtonConfiguration();
 			break;
 #else
@@ -3672,7 +3704,7 @@ static int SoundSettings(void)
 #ifdef SOUND_THIN_API
 	Sound_setup_t setup = Sound_desired;
 	static char freq_string[9]; /* "nnnnn Hz\0" */
-	static char frag_frames_string[13]; /* "auto (nnnnn)\0" */
+	static char hw_buflen_string[15]; /* "auto (nnnn ms)\0" */
 #ifdef SYNCHRONIZED_SOUND
 	static char latency_string[8]; /* nnnn ms\0" */
 #endif /* SYNCHRONIZED_SOUND */
@@ -3694,16 +3726,14 @@ static int SoundSettings(void)
 		UI_MENU_END
 	};
 
-	static const UI_tMenuItem frag_frames_menu_array[] = {
-		UI_MENU_ACTION(0, "automatic"),
-		UI_MENU_ACTION(128, "128"),
-		UI_MENU_ACTION(256, "256"),
-		UI_MENU_ACTION(512, "512"),
-		UI_MENU_ACTION(1024, "1024"),
-		UI_MENU_ACTION(2048, "2048"),
-		UI_MENU_ACTION(4096, "4096"),
-		UI_MENU_ACTION(8192, "8192"),
-		UI_MENU_ACTION(16384, "16384"),
+	static const UI_tMenuItem hw_buflen_menu_array[] = {
+		UI_MENU_ACTION(0, "choose automatically"),
+		UI_MENU_ACTION(20, "20 ms"),
+		UI_MENU_ACTION(40, "40 ms"),
+		UI_MENU_ACTION(80, "80 ms"),
+		UI_MENU_ACTION(160, "160 ms"),
+		UI_MENU_ACTION(320, "320 ms"),
+		UI_MENU_ACTION(1, "custom"),
 		UI_MENU_END
 	};
 #endif /* SOUND_THIN_API */
@@ -3713,7 +3743,7 @@ static int SoundSettings(void)
 		UI_MENU_CHECK(0, "Enable sound:"),
 		UI_MENU_SUBMENU_SUFFIX(1, "Frequency:", freq_string),
 		UI_MENU_ACTION(2, "Bit depth:"),
-		UI_MENU_SUBMENU_SUFFIX(3, "Fragment size:", frag_frames_string),
+		UI_MENU_SUBMENU_SUFFIX(3, "Hardware buffer length:", hw_buflen_string),
 #ifdef SYNCHRONIZED_SOUND
 		UI_MENU_SUBMENU_SUFFIX(4, "Latency:", latency_string),
 #endif /* SYNCHRONIZED_SOUND */
@@ -3742,16 +3772,16 @@ static int SoundSettings(void)
 		SetItemChecked(menu_array, 0, Sound_enabled);
 		snprintf(freq_string, sizeof(freq_string), "%i Hz", setup.freq);
 		menu_array[2].suffix = setup.sample_size == 2 ? "16 bit" : "8 bit";
-		if (setup.frag_frames == 0) {
+		if (setup.buffer_ms == 0) {
 			if (Sound_enabled)
-				snprintf(frag_frames_string, sizeof(frag_frames_string), "auto (%u)", Sound_out.frag_frames);
+				snprintf(hw_buflen_string, sizeof(hw_buflen_string), "auto (%u ms)", Sound_out.buffer_ms);
 			else
-				strncpy(frag_frames_string, "auto", sizeof(frag_frames_string));
+				strncpy(hw_buflen_string, "auto", sizeof(hw_buflen_string));
 		}
 		else
-			snprintf(frag_frames_string, sizeof(frag_frames_string), "%u", setup.frag_frames);
+			snprintf(hw_buflen_string, sizeof(hw_buflen_string), "%u ms", setup.buffer_ms);
 #ifdef SYNCHRONIZED_SOUND
-		snprintf(latency_string, sizeof(latency_string), "%i ms", Sound_latency);
+		snprintf(latency_string, sizeof(latency_string), "%u ms", Sound_latency);
 #endif /* SYNCHRONIZED_SOUND */
 #endif /* SOUND_THIN_API */
 #ifdef DREAMCAST
@@ -3804,16 +3834,30 @@ static int SoundSettings(void)
 				}
 				else if (option2 >= 0)
 					setup.freq = freq_values[option2];
-				}
+			}
 			break;
 		case 2:
 			setup.sample_size = 3 - setup.sample_size; /* Toggle 1<->2 */
 			break;
 		case 3:
 			{
-				int option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, setup.frag_frames, frag_frames_menu_array, NULL);
-				if (option2 >= 0)
-					setup.frag_frames = option2;
+				int current = 1; /* 1 means "custom" as in hw_buflen_menu_array */
+				int i, option2;
+				for (i = 0; hw_buflen_menu_array[i].retval != 1; ++i) {
+					/* Find the currently-chosen buffer length. */
+					if (setup.buffer_ms == hw_buflen_menu_array[i].retval) {
+						current = setup.buffer_ms;
+						break;
+					}
+				}
+				option2 = UI_driver->fSelect(NULL, UI_SELECT_POPUP, current, hw_buflen_menu_array, NULL);
+				if (option2 == 1) {
+					snprintf(hw_buflen_string, sizeof(hw_buflen_string), "%u", setup.buffer_ms); /* Remove " ms" suffix */
+					if (UI_driver->fEditString("Enter hardware buffer length", hw_buflen_string, sizeof(hw_buflen_string)-3))
+						setup.buffer_ms = atoi(hw_buflen_string);
+				}
+				else if (option2 >= 0)
+					setup.buffer_ms = option2;
 			}
 			break;
 #ifdef SYNCHRONIZED_SOUND
@@ -3872,7 +3916,7 @@ static int SoundSettings(void)
 #ifdef STEREO_SOUND
 			         setup.channels    != Sound_desired.channels ||
 #endif
-			         setup.frag_frames != Sound_desired.frag_frames) {
+			         setup.buffer_ms != Sound_desired.buffer_ms) {
 				/* Sound output reinitialisation needed. */
 				Sound_desired = setup;
 				if (!Sound_Setup()) {
@@ -3915,7 +3959,7 @@ static void AboutEmulator(void)
 		Atari800_TITLE "\0"
 		"Copyright (c) 1995-1998 David Firth\0"
 		"and\0"
-		"(c)1998-2010 Atari800 Development Team\0"
+		"(c)1998-2015 Atari800 Development Team\0"
 		"See CREDITS file for details.\0"
 		"http://atari800.atari.org/\0"
 		"\0"

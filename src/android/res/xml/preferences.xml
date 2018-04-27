@@ -287,6 +287,20 @@
 			android:summary="@string/pref_hqpokey_sum"
 			android:defaultValue="false"
 			android:dependency="sound"/>
+		<CheckBoxPreference
+			android:key="forceAT"
+			android:title="@string/pref_forceAT"
+			android:summary="@string/pref_forceAT_sum"
+			android:defaultValue="false"
+			android:dependency="sound"
+			android:enabled="false"/>
+	</PreferenceCategory>
+
+	<PreferenceCategory android:title="@string/preftitle_extras">
+		<Preference
+			android:key="launchpd"
+			android:title="@string/pref_launchpd"
+			android:summary="@string/pref_launchpd_sum"/>
 	</PreferenceCategory>
 
 	<PreferenceCategory android:title="@string/preftitle_about">
