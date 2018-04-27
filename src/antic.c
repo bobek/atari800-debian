@@ -1506,6 +1506,7 @@ static void draw_antic_2_dmactl_bug(int nchars, const UBYTE *antic_memptr, UWORD
 {
 	INIT_BACKGROUND_6
 	INIT_ANTIC_2
+	(void)chptr; /* suppress GCC -Wunused-but-set-variable warning */
 	INIT_HIRES
 
 	CHAR_LOOP_BEGIN
@@ -3199,9 +3200,9 @@ position, when a change was made to a display register during drawing */
 void ANTIC_UpdateScanline(void)
 {
 	int actual_xpos = ANTIC_cpu2antic_ptr[ANTIC_xpos];
-	int newpos = actual_xpos * 2 - 37;
-	draw_partial_scanline(ANTIC_cur_screen_pos, newpos);
-	ANTIC_cur_screen_pos = newpos;
+        int oldpos = ANTIC_cur_screen_pos;
+	ANTIC_cur_screen_pos = actual_xpos * 2 - 37;
+	draw_partial_scanline(oldpos, ANTIC_cur_screen_pos);
 }
 
 /* prior needs a different adjustment and could generate small glitches
@@ -3212,10 +3213,9 @@ void ANTIC_UpdateScanlinePrior(UBYTE byte)
 {
 	int actual_xpos = ANTIC_cpu2antic_ptr[ANTIC_xpos];
 	int prior_mode_adj = 2;
-	int newpos;
-	newpos = actual_xpos * 2 - 37 + prior_mode_adj;
-	draw_partial_scanline(ANTIC_cur_screen_pos, newpos);
-	ANTIC_cur_screen_pos = newpos;
+	int oldpos = ANTIC_cur_screen_pos;
+	ANTIC_cur_screen_pos = actual_xpos * 2 - 37 + prior_mode_adj;
+	draw_partial_scanline(oldpos, ANTIC_cur_screen_pos);
 }
 
 /* chbase needs a different adjustment */
@@ -3224,7 +3224,7 @@ void update_scanline_chbase(void)
 	int actual_xpos = ANTIC_cpu2antic_ptr[ANTIC_xpos];
 	int hscrol_adj = (IR & 0x10) ? ANTIC_HSCROL : 0;
 	int hscrollsb_adj = (hscrol_adj & 1);
-	int newpos;
+	int oldpos = ANTIC_cur_screen_pos;
 	int fontfetch_adj;
 	/* antic fetches character font data every 2 or 4 cycles */
 	/* we want to delay the change until the next fetch */
@@ -3238,9 +3238,8 @@ void update_scanline_chbase(void)
 	else {
 		fontfetch_adj = 0;
 	}
-	newpos = actual_xpos * 2 - 37 + hscrollsb_adj + fontfetch_adj;
-	draw_partial_scanline(ANTIC_cur_screen_pos, newpos);
-	ANTIC_cur_screen_pos = newpos;
+	ANTIC_cur_screen_pos = actual_xpos * 2 - 37 + hscrollsb_adj + fontfetch_adj;
+	draw_partial_scanline(oldpos, ANTIC_cur_screen_pos);
 }
 
 /* chactl invert needs a different adjustment */
@@ -3249,12 +3248,11 @@ void update_scanline_invert(void)
 	int actual_xpos = ANTIC_cpu2antic_ptr[ANTIC_xpos];
 	int hscrol_adj = (IR & 0x10) ? ANTIC_HSCROL : 0;
 	int hscrollsb_adj = (hscrol_adj & 1);
-	int newpos;
+	int oldpos = ANTIC_cur_screen_pos;
 
 	/* empirically determined: adjustment of 4 */
-	newpos = actual_xpos * 2 - 37 + hscrollsb_adj + 4;
-	draw_partial_scanline(ANTIC_cur_screen_pos, newpos);
-	ANTIC_cur_screen_pos = newpos;
+	ANTIC_cur_screen_pos = actual_xpos * 2 - 37 + hscrollsb_adj + 4;
+	draw_partial_scanline(oldpos, ANTIC_cur_screen_pos);
 }
 
 /* chactl blank needs a different adjustment */
@@ -3263,12 +3261,11 @@ void update_scanline_blank(void)
 	int actual_xpos = ANTIC_cpu2antic_ptr[ANTIC_xpos];
 	int hscrol_adj = (IR & 0x10) ? ANTIC_HSCROL : 0;
 	int hscrollsb_adj = (hscrol_adj & 1);
-	int newpos;
+	int oldpos = ANTIC_cur_screen_pos;
 
 	/* empirically determined: adjustment of 7 */
-	newpos = actual_xpos * 2 - 37 + hscrollsb_adj + 7;
-	draw_partial_scanline(ANTIC_cur_screen_pos, newpos);
-	ANTIC_cur_screen_pos = newpos;
+	ANTIC_cur_screen_pos = actual_xpos * 2 - 37 + hscrollsb_adj + 7;
+	draw_partial_scanline(oldpos, ANTIC_cur_screen_pos);
 }
 
 static void set_dmactl_bug(void){

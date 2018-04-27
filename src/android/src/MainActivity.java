@@ -1,8 +1,8 @@
 /*
  * MainActivity.java - activity entry point for atari800
  *
- * Copyright (C) 2010 Kostas Nakos
- * Copyright (C) 2010 Atari800 development team (see DOC/CREDITS)
+ * Copyright (C) 2014 Kostas Nakos
+ * Copyright (C) 2014 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -200,6 +200,7 @@ public final class MainActivity extends Activity
 		_pkgversion = getPInfo().versionName;
 
 		if (!_initialized) {
+			_settings.putBoolean("plandef", false);
 			_settings.fetchApplySettings();
 			_initialized = true;
 			bootupMsgs();
@@ -479,8 +480,13 @@ public final class MainActivity extends Activity
 	}
 
 	public void pauseEmulation(boolean pause) {
-		if (_audio != null)	_audio.pause(pause);
-		if (_view != null)	_view.pause(pause);
+		if (pause) {
+			if (_audio != null)	_audio.pause(pause);
+			if (_view != null)	_view.pause(pause);
+		} else {
+			if (_view != null)	_view.pause(pause);
+			if (_audio != null)	_audio.pause(pause);
+		}
 	}
 
 	@Override
@@ -653,7 +659,7 @@ public final class MainActivity extends Activity
 			joyopacity, joyrighth, joydeadband, joymidx, sound, mixrate, sound16bit,
 			hqpokey, mixbufsize, version, rompath, anchor, anchorstr, joygrace,
 			crophoriz, cropvert, derotkeys, actiona, actionb, actionc, ntsc, paddle,
-			plandef, browser
+			plandef, browser, forceAT
 		};
 		private SharedPreferences _sharedprefs;
 		private Map<PreferenceName, String> _values, _newvalues;
@@ -750,12 +756,16 @@ public final class MainActivity extends Activity
 						   Boolean.parseBoolean(_newvalues.get(PreferenceName.plandef)) );
 
 			if ( changed(PreferenceName.mixrate) || changed(PreferenceName.sound16bit) ||
-				 changed(PreferenceName.hqpokey) )
+				 changed(PreferenceName.hqpokey) || changed(PreferenceName.mixbufsize) ||
+				 changed(PreferenceName.forceAT) )
 				NativePrefSound( Integer.parseInt(_newvalues.get(PreferenceName.mixrate)),
+								 Integer.parseInt(_newvalues.get(PreferenceName.mixbufsize)) * 10,
 								 Boolean.parseBoolean(_newvalues.get(PreferenceName.sound16bit)),
-								 Boolean.parseBoolean(_newvalues.get(PreferenceName.hqpokey)) );
+								 Boolean.parseBoolean(_newvalues.get(PreferenceName.hqpokey)),
+								 Boolean.parseBoolean(_newvalues.get(PreferenceName.forceAT)) );
 			if ( changed(PreferenceName.sound) || changed(PreferenceName.mixrate) ||
-				 changed(PreferenceName.sound16bit) || changed(PreferenceName.mixbufsize) )
+				 changed(PreferenceName.sound16bit) || changed(PreferenceName.mixbufsize) ||
+				 changed(PreferenceName.forceAT) )
 				((MainActivity) _context).soundInit(true);
 
 			if (changed(PreferenceName.rompath))
@@ -786,6 +796,13 @@ public final class MainActivity extends Activity
 			_values.put(PreferenceName.valueOf(key), val);
 			SharedPreferences.Editor e = _sharedprefs.edit();
 			e.putString(key, val);
+			e.commit();
+		}
+
+		public void putBoolean(String key, boolean val) {
+			_values.put(PreferenceName.valueOf(key), Boolean.toString(val));
+			SharedPreferences.Editor e = _sharedprefs.edit();
+			e.putBoolean(key, val);
 			e.commit();
 		}
 
@@ -844,7 +861,8 @@ public final class MainActivity extends Activity
 	private static native void NativePrefJoy(boolean visible, int size, int opacity, boolean righth,
 											 int deadband, int midx, boolean anchor, int anchorx, int anchory,
 											 int grace, boolean paddle, boolean plandef);
-	private static native void NativePrefSound(int mixrate, boolean sound16bit, boolean hqpokey);
+	private static native void NativePrefSound(int mixrate, int mixbufsizems, boolean sound16bit, boolean hqpokey,
+											   boolean disableOSL);
 	private static native boolean NativeSetROMPath(String path);
 	private static native String NativeGetJoypos();
 	private static native String NativeGetURL();

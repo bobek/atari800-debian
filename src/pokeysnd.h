@@ -66,8 +66,6 @@
 extern "C" {
 #endif
 
-	/* #define SIGNED_SAMPLES */ /* define for signed output */
-
 #ifdef  POKEYSND_SIGNED_SAMPLES			/* if signed output selected */
 #define POKEYSND_SAMP_MAX 127			/* then set signed 8-bit clipping ranges */
 #define POKEYSND_SAMP_MIN -128
@@ -84,6 +82,7 @@ extern "C" {
 extern SLONG POKEYSND_playback_freq;
 extern UBYTE POKEYSND_num_pokeys;
 extern int POKEYSND_snd_flags;
+extern int POKEYSND_volume;
 
 extern int POKEYSND_enable_new_pokey;
 extern int POKEYSND_stereo_enabled;
@@ -105,9 +104,14 @@ int POKEYSND_Init(ULONG freq17, int playback_freq, UBYTE num_pokeys,
                      );
 void POKEYSND_Update(UWORD addr, UBYTE val, UBYTE /*chip*/, UBYTE gain);
 void POKEYSND_UpdateConsol(int set);
+
+/* Fill sndbuffer with sndn samples of audio. Number of bytes written to
+   sndbuffer is sndn with 8-bit sound, and 2*sndn with 16-bit sound. sndn
+   must be a multiple of POKEYSND_num_pokeys. */
 void POKEYSND_Process(void *sndbuffer, int sndn);
 int POKEYSND_DoInit(void);
 void POKEYSND_SetMzQuality(int quality);
+void POKEYSND_SetVolume(int vol);
 
 /* Volume only emulations declarations */
 #ifdef VOL_ONLY_SOUND

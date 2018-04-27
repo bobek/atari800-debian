@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include "cartridge.h"
 #include "cassette.h"
+#include "binload.h"
 #include "cfg.h"
 #include "devices.h"
 #include "esc.h"
@@ -40,6 +41,9 @@
 #endif
 #ifdef AF80
 #include "af80.h"
+#endif
+#ifdef BIT3
+#include "bit3.h"
 #endif
 #include "platform.h"
 #include "pokeysnd.h"
@@ -172,6 +176,8 @@ int CFG_LoadConfig(const char *alternate_config_filename)
 					Log_print("Unsafe PRINT_COMMAND ignored");
 			}
 
+			else if (strcmp(string, "ACCURATE_SKIPPED_FRAMES") == 0)
+				Atari800_collisions_in_skipped_frames = Util_sscanbool(ptr);
 			else if (strcmp(string, "SCREEN_REFRESH_RATIO") == 0)
 				Atari800_refresh_rate = Util_sscandec(ptr);
 			else if (strcmp(string, "DISABLE_BASIC") == 0)
@@ -179,6 +185,9 @@ int CFG_LoadConfig(const char *alternate_config_filename)
 
 			else if (strcmp(string, "ENABLE_SIO_PATCH") == 0) {
 				ESC_enable_sio_patch = Util_sscanbool(ptr);
+			}
+			else if (strcmp(string, "ENABLE_SLOW_XEX_LOADING") == 0) {
+				BINLOAD_slow_xex_loading = Util_sscanbool(ptr);
 			}
 			else if (strcmp(string, "ENABLE_H_PATCH") == 0) {
 				Devices_enable_h_patch = Util_sscanbool(ptr);
@@ -295,6 +304,10 @@ int CFG_LoadConfig(const char *alternate_config_filename)
 			else if (AF80_ReadConfig(string,ptr)) {
 			}
 #endif
+#ifdef BIT3
+			else if (BIT3_ReadConfig(string,ptr)) {
+			}
+#endif
 #if !defined(BASIC) && !defined(CURSES_BASIC)
 			else if (Colours_ReadConfig(string, ptr)) {
 			}
@@ -376,6 +389,7 @@ int CFG_WriteConfig(void)
 
 #ifndef BASIC
 	fprintf(fp, "SCREEN_REFRESH_RATIO=%d\n", Atari800_refresh_rate);
+	fprintf(fp, "ACCURATE_SKIPPED_FRAMES=%d\n", Atari800_collisions_in_skipped_frames);
 #endif
 
 	fprintf(fp, "MACHINE_TYPE=Atari %s\n", machine_type_string[Atari800_machine_type]);
@@ -400,6 +414,7 @@ int CFG_WriteConfig(void)
 
 	fprintf(fp, "DISABLE_BASIC=%d\n", Atari800_disable_basic);
 	fprintf(fp, "ENABLE_SIO_PATCH=%d\n", ESC_enable_sio_patch);
+	fprintf(fp, "ENABLE_SLOW_XEX_LOADING=%d\n", BINLOAD_slow_xex_loading);
 	fprintf(fp, "ENABLE_H_PATCH=%d\n", Devices_enable_h_patch);
 	fprintf(fp, "ENABLE_P_PATCH=%d\n", Devices_enable_p_patch);
 #ifdef R_IO_DEVICE
@@ -435,6 +450,9 @@ int CFG_WriteConfig(void)
 #endif
 #ifdef AF80
 	AF80_WriteConfig(fp);
+#endif
+#ifdef BIT3
+	BIT3_WriteConfig(fp);
 #endif
 #if !defined(BASIC) && !defined(CURSES_BASIC)
 	Colours_WriteConfig(fp);

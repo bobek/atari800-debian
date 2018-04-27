@@ -402,7 +402,7 @@ void Android_KeyEvent(int k, int s)
 		for (i = 0; i < 4; i++)
 			if (softjoymap[i][0] == k) {
 				if (s)
-					Android_PortStatus &= softjoymap[i][1];
+					Android_PortStatus &= 0xFFF0 | softjoymap[i][1];
 				else
 					Android_PortStatus |= ~softjoymap[i][1];
 				return;
@@ -448,7 +448,7 @@ void Input_Initialize(void)
 {
 	int i;
 
-	memset(prevtc, 0, 2 * sizeof(struct touchstate));
+	memset(prevtc, 0, sizeof(prevtc));
 	prevconptr = PTRSTL;
 
 	memset(&AndroidInput_JoyOvl, 0, sizeof(struct joy_overlay_state));

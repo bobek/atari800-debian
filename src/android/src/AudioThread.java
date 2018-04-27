@@ -1,8 +1,8 @@
 /*
  * AudioThread.java - pushes audio to android
  *
- * Copyright (C) 2010 Kostas Nakos
- * Copyright (C) 2010 Atari800 development team (see DOC/CREDITS)
+ * Copyright (C) 2014 Kostas Nakos
+ * Copyright (C) 2014 Atari800 development team (see DOC/CREDITS)
  *
  * This file is part of the Atari800 emulator project which emulates
  * the Atari 400, 800, 800XL, 130XE, and 5200 8-bit computers.
@@ -41,22 +41,31 @@ public final class AudioThread extends Thread
 	private int _chunk;
 	private boolean _initok;
 	private boolean _pause;
+	private boolean _useOSL;
 
 	public AudioThread(int rate, int bytes, int bufsizems, boolean ntsc) {
+		NativeOSLSoundInit();
+		_useOSL = NativeOSLSound();
+		if (_useOSL) {
+			Log.d(TAG, "Disabling AudioThread. Using OSL instead");
+			return;
+		}
+
 		int format = bytes == 1 ? AudioFormat.ENCODING_PCM_8BIT : AudioFormat.ENCODING_PCM_16BIT;
 		int minbuf = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, format);
 		int hardmin = (int) ( ((float) rate * bytes) / ((float) (1000.0f / bufsizems)) );
-		_chunk = rate * bytes / (ntsc ? 60 : 50);
+		_chunk = (rate * bytes / (ntsc ? 60 : 50) + 3) / 4 * 4;
 		_bufsize = (hardmin > minbuf) ? hardmin : minbuf;
 		_bufsize = ((_bufsize + _chunk - 1) / _chunk * _chunk + 3) / 4 * 4;
 		_at = new AudioTrack(AudioManager.STREAM_MUSIC, rate, AudioFormat.CHANNEL_CONFIGURATION_MONO,
 							 format, _bufsize, AudioTrack.MODE_STREAM);
 		_buffer = new byte[_bufsize];
 		Log.d( TAG, String.format(
-				  "Mixing audio at %dHz, %dbit, buffer size %d (%d ms) [requested=%d(%dms), minbuf=%d(%dms)]",
+				  "Mixing audio at %dHz, %dbit, buffer size %d (%d ms) [requested=%d(%dms), minbuf=%d(%dms)], chunk %d",
 				  rate, 8 * bytes, _bufsize, (int) (((float) _bufsize)/((float) rate * bytes) * 1000),
 				  hardmin, (int) (((float) hardmin)/((float) rate * bytes) * 1000),
-				  minbuf, (int) (((float) minbuf)/((float) rate * bytes) * 1000)
+				  minbuf, (int) (((float) minbuf)/((float) rate * bytes) * 1000),
+				  _chunk
 				  ) );
 		_quit = false;
 		_pause = false;
@@ -69,6 +78,11 @@ public final class AudioThread extends Thread
 	}
 
 	public void pause(boolean p) {
+		if (_useOSL) {
+			NativeOSLSoundPause(p);
+			return;
+		}
+
 		_pause = p;
 		if (!_initok)	return;
 		if (p) {
@@ -84,41 +98,52 @@ public final class AudioThread extends Thread
 		int offset = 0;
 		int len, w, chunk;
 
+		if (_useOSL) {
+			NativeOSLSoundPause(false);
+			return;
+		}
 		if (!_initok)	return;
 
+		Log.d(TAG, "Running");
 		NativeSoundInit(_bufsize);
 		_at.play();
 		chunk = _chunk / 2;
 
 		try {
-		while (!_quit) {
-			if (_pause) {
-				sleep(100);
-				continue;
-			}
+			while (!_quit) {
+				if (_pause) {
+					sleep(100);
+					continue;
+				}
 
-			len = _bufsize - offset;
-			if (len > chunk)
-				len = chunk;
-			else if (len <= 0) {
-				len = chunk;
-				offset = 0;
+				len = _bufsize - offset;
+				if (len > chunk)
+					len = chunk;
+				else if (len <= 0) {
+					len = chunk;
+					offset = 0;
+				}
+				NativeSoundUpdate(offset, len);
+				w = 0;
+				while (w < len)
+					w += _at.write(_buffer, offset + w, len - w);
+				offset += w;
 			}
-			NativeSoundUpdate(offset, len);
-			w = 0;
-			while (w < len)
-				w += _at.write(_buffer, offset + w, len - w);
-			offset += w;
-			//Log.d(TAG, String.format("Pumped %d bytes", w));
-		}
 		} catch (InterruptedException ex) {
 		}
 
+		Log.d(TAG, "Exit");
 		NativeSoundExit();
 		_at.stop();
+		_at.release();
 	}
 
 	public void interrupt() {
+		if (_useOSL) {
+			NativeOSLSoundExit();
+			return;
+		}
+
 		Log.d(TAG, "Audio thread exit via interrupt");
 		_quit = true;
 	}
@@ -127,4 +152,8 @@ public final class AudioThread extends Thread
 	private native void NativeSoundInit(int size);
 	private native void NativeSoundUpdate(int offset, int length);
 	private native void NativeSoundExit();
+	private native boolean NativeOSLSound();
+	private native void NativeOSLSoundInit();
+	private native void NativeOSLSoundExit();
+	private native void NativeOSLSoundPause(boolean paused);
 }

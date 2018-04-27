@@ -80,6 +80,7 @@ static int motif_disk_sel = 1;
 #include <X11/keysym.h>
 
 #include "atari.h"
+#include "binload.h"
 #include "cartridge.h"
 #include "colours.h"
 #include "input.h"
@@ -159,7 +160,9 @@ static Colormap cmap;
 
 static GC gc;
 static GC gc_colour[256];
-static int colours[256];
+static unsigned long colours[256];
+static int colors_allocated;
+static int force_redraw;  /* flag for PLATFORM_DisplayScreen: redraw whole screen after a palette change */
 
 #ifdef XVIEW
 static Frame frame;
@@ -251,6 +254,8 @@ static int GetKeyCode(XEvent *event)
 	if (event->type == KeyPress || event->type == KeyRelease) {
 		XLookupString((XKeyEvent *) event, buffer, sizeof(buffer), &keysym, NULL);
 	}
+
+	BINLOAD_pause_loading = FALSE;
 
 	switch (event->type) {
 	case Expose:
@@ -450,7 +455,12 @@ static int GetKeyCode(XEvent *event)
 			break;
 		case XK_Break:
 		case XK_F7:
-			keycode = AKEY_BREAK;
+			if (BINLOAD_wait_active) {
+				BINLOAD_pause_loading = TRUE;
+				keycode = AKEY_NONE;
+			}
+			else
+				keycode = AKEY_BREAK;
 			break;
 		case XK_Home:
 			keycode = AKEY_CLEAR;
@@ -796,7 +806,7 @@ static int insert_rom(const char *filename)
 	/* TODO: select cartridge type */
 	for (i = 1; i < CARTRIDGE_LAST_SUPPORTED; i++) {
 		if (CARTRIDGE_kb[i] == r) {
-			CARTRIDGE_type = i;
+			CARTRIDGE_main.type = i;
 			Atari800_Coldstart();
 			return TRUE;
 		}
@@ -1002,14 +1012,9 @@ static void coldstart_sys(int machtype, int ram, const char *errmsg)
 	}
 }
 
-static void coldstart_osa_callback(void)
+static void coldstart_800_callback(void)
 {
-	coldstart_sys(Atari800_MACHINE_OSA, 48, "Sorry, OS/A ROM Unavailable");
-}
-
-static void coldstart_osb_callback(void)
-{
-	coldstart_sys(Atari800_MACHINE_OSB, 48, "Sorry, OS/B ROM Unavailable");
+	coldstart_sys(Atari800_MACHINE_800, 48, "Sorry, 800 ROM Unavailable");
 }
 
 static void coldstart_xl_callback(void)
@@ -1194,7 +1199,7 @@ static void motif_boot_disk(Widget fs, XtPointer client_data,
 
 static void motif_select_disk(Widget toggle, XtPointer client_data, XtPointer cbs)
 {
-	motif_disk_sel = (int) client_data;
+	motif_disk_sel = (int)(long) client_data;
 }
 
 static void motif_insert_disk(Widget fs, XtPointer client_data, XtPointer cbs)
@@ -1236,12 +1241,12 @@ static void motif_fs_cancel(Widget fs, XtPointer client_data, XtPointer call_dat
 
 static void motif_eject_cback(Widget button, XtPointer client_data, XtPointer cbs)
 {
-	SIO_Dismount(((int) client_data) + 1);
+	SIO_Dismount(((int)(long) client_data) + 1);
 }
 
 static void motif_disable_cback(Widget button, XtPointer client_data, XtPointer cbs)
 {
-	SIO_DisableDrive(((int) client_data) + 1);
+	SIO_DisableDrive(((int)(long) client_data) + 1);
 }
 
 static void update_fsel(Widget fsel)
@@ -1258,7 +1263,7 @@ static void motif_system_cback(Widget w, XtPointer item_no, XtPointer cbs)
 	int status;
 	char *errmsg = NULL;
 
-	switch ((int) item_no) {
+	switch ((int)(long) item_no) {
 	case 0:
 		update_fsel(fsel_b);
 		XtManageChild(fsel_b);
@@ -1289,41 +1294,34 @@ static void motif_system_cback(Widget w, XtPointer item_no, XtPointer cbs)
 		Atari800_Coldstart();
 		break;
 	case 6:
-		Atari800_machine_type = Atari800_MACHINE_OSA;
+		Atari800_machine_type = Atari800_MACHINE_800;
 		MEMORY_ram_size = 48;
 		status = Atari800_InitialiseMachine();
 		if (status == 0)
-			errmsg = "Sorry, OS/A ROM Unavailable";
+			errmsg = "Sorry, 800 ROM Unavailable";
 		break;
 	case 7:
-		Atari800_machine_type = Atari800_MACHINE_OSB;
-		MEMORY_ram_size = 48;
-		status = Atari800_InitialiseMachine();
-		if (status == 0)
-			errmsg = "Sorry, OS/B ROM Unavailable";
-		break;
-	case 8:
 		Atari800_machine_type = Atari800_MACHINE_XLXE;
 		MEMORY_ram_size = 64;
 		status = Atari800_InitialiseMachine();
 		if (status == 0)
 			errmsg = "Sorry, XL/XE ROM Unavailable";
 		break;
-	case 9:
+	case 8:
 		Atari800_machine_type = Atari800_MACHINE_XLXE;
 		MEMORY_ram_size = 128;
 		status = Atari800_InitialiseMachine();
 		if (status == 0)
 			errmsg = "Sorry, XL/XE ROM Unavailable";
 		break;
-	case 10:
+	case 9:
 		Atari800_machine_type = Atari800_MACHINE_5200;
 		MEMORY_ram_size = 16;
 		status = Atari800_InitialiseMachine();
 		if (status == 0)
 			errmsg = "Sorry, 5200 ROM Unavailable";
 		break;
-	case 11:
+	case 10:
 		Atari800_Exit(FALSE);
 		exit(0);
 	}
@@ -1354,7 +1352,7 @@ static void motif_system_cback(Widget w, XtPointer item_no, XtPointer cbs)
 
 static void motif_consol_cback(Widget w, XtPointer item_no, XtPointer cbs)
 {
-	switch ((int) item_no) {
+	switch ((int)(long) item_no) {
 	case 0:
 		menu_consol &= (~INPUT_CONSOL_OPTION);
 		break;
@@ -1393,10 +1391,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 	XSetWindowAttributes xswda;
 #endif
 
-	XGCValues xgcvl;
-
 	int depth;
-	int colorstep;
 	int i, j;
 	int mode = 0;
 	int help_only = FALSE;
@@ -1418,7 +1413,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 	for (i = j = 1; i < *argc; i++) {
 		int i_a = (i + 1 < *argc);		/* is argument available? */
 		int a_m = FALSE;			/* error, argument missing! */
-		
+
 		if (strcmp(argv[i], "-small") == 0)
 			windowsize = Small;
 		else if (strcmp(argv[i], "-large") == 0)
@@ -1452,7 +1447,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 				keypad_mode = mode++;
 		}
 		else {
-			if (strcmp(argv[i], "-help") == 0) {
+			if (strcmp(argv[i], "-help") == 0 || a_m) {
 				help_only = TRUE;
 				printf("\t-small           Small window (%dx%d)\n",
 					   clipping_width, clipping_height);
@@ -1468,10 +1463,14 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 				printf("\t-private_cmap    Use private colormap\n");
 				printf("\t-sio             Show SIO monitor\n");
 				printf("\t-keypad          Keypad mode\n");
+				break;
 			}
 			argv[j++] = argv[i];
 		}
 	}
+
+	if (help_only)
+		return TRUE;
 
 	*argc = j;
 
@@ -1479,9 +1478,6 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 	if (!Sound_Initialise(argc, argv))
 		return FALSE;
 #endif
-
-	if (help_only)
-		return TRUE;
 
 	if ((clipping_x < 0) || (clipping_x >= Screen_WIDTH))
 		clipping_x = 0;
@@ -1597,12 +1593,8 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 							MENU_NOTIFY_PROC, remove_rom_callback,
 							NULL,
 							MENU_ITEM,
-							MENU_STRING, "Atari 800 OS/A",
-							MENU_NOTIFY_PROC, coldstart_osa_callback,
-							NULL,
-							MENU_ITEM,
-							MENU_STRING, "Atari 800 OS/B",
-							MENU_NOTIFY_PROC, coldstart_osb_callback,
+							MENU_STRING, "Atari 800",
+							MENU_NOTIFY_PROC, coldstart_800_callback,
 							NULL,
 							MENU_ITEM,
 							MENU_STRING, "Atari 800XL",
@@ -1849,8 +1841,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 		XmString s_disable_drive;
 		XmString s_insert_cart;
 		XmString s_remove_cart;
-		XmString s_osa;
-		XmString s_osb;
+		XmString s_os800;
 		XmString s_osxl;
 		XmString s_osxe;
 		XmString s_os5200;
@@ -1885,8 +1876,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 		s_disable_drive = XmStringCreateSimple("Disable Drive");
 		s_insert_cart = XmStringCreateSimple("Insert Cartridge...");
 		s_remove_cart = XmStringCreateSimple("Remove Cartridge");
-		s_osa = XmStringCreateSimple("Atari 800 OS/A");
-		s_osb = XmStringCreateSimple("Atari 800 OS/B");
+		s_os800 = XmStringCreateSimple("Atari 800");
 		s_osxl = XmStringCreateSimple("Atari 800XL");
 		s_osxe = XmStringCreateSimple("Atari 130XE");
 		s_os5200 = XmStringCreateSimple("Atari 5200");
@@ -1914,8 +1904,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 						  XmVaPUSHBUTTON, s_insert_cart, 'n', NULL, NULL,
 						  XmVaPUSHBUTTON, s_remove_cart, 'R', NULL, NULL,
 										 XmVaSEPARATOR,
-								  XmVaPUSHBUTTON, s_osa, 'A', NULL, NULL,
-								  XmVaPUSHBUTTON, s_osb, 'B', NULL, NULL,
+								  XmVaPUSHBUTTON, s_os800, '8', NULL, NULL,
 								 XmVaPUSHBUTTON, s_osxl, 'L', NULL, NULL,
 								 XmVaPUSHBUTTON, s_osxe, 'E', NULL, NULL,
 							   XmVaPUSHBUTTON, s_os5200, '5', NULL, NULL,
@@ -1939,8 +1928,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 		XmStringFree(s_disable_drive);
 		XmStringFree(s_insert_cart);
 		XmStringFree(s_remove_cart);
-		XmStringFree(s_osa);
-		XmStringFree(s_osb);
+		XmStringFree(s_os800);
 		XmStringFree(s_osxl);
 		XmStringFree(s_osxe);
 		XmStringFree(s_os5200);
@@ -2226,50 +2214,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 						   window_width, window_height, depth);
 #endif /* SHM */
 
-	if (depth <= 8)
-		colorstep = 2;
-	else
-		colorstep = 1;
-	for (i = 0; i < 256; i += colorstep) {
-		XColor colour;
-
-		int rgb = Colours_table[i];
-		int status;
-
-		colour.red = (rgb & 0x00ff0000) >> 8;
-		colour.green = (rgb & 0x0000ff00);
-		colour.blue = (rgb & 0x000000ff) << 8;
-
-		status = XAllocColor(display,
-							 cmap,
-							 &colour);
-
-		for (j = 0; j < colorstep; j++)
-			colours[i + j] = colour.pixel;
-
-#ifdef SHM
-#ifdef USE_COLOUR_TRANSLATION_TABLE
-		for (j = 0; j < colorstep; j++)
-			colour_translation_table[i + j] = colours[i + j] | (colours[i + j] << 8);
-#endif
-#endif
-	}
-
-	for (i = 0; i < 256; i++) {
-		xgcvl.background = colours[0];
-		xgcvl.foreground = colours[i];
-
-		gc_colour[i] = XCreateGC(display, window,
-								 GCForeground | GCBackground,
-								 &xgcvl);
-	}
-
-	xgcvl.background = colours[0];
-	xgcvl.foreground = colours[0];
-
-	gc = XCreateGC(display, window,
-				   GCForeground | GCBackground,
-				   &xgcvl);
+	PLATFORM_PaletteUpdate();
 
 #ifndef SHM
 	XFillRectangle(display, pixmap, gc, 0, 0,
@@ -2289,6 +2234,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
    ============================
  */
 	image_data = (UBYTE *) Util_malloc(Screen_WIDTH * Screen_HEIGHT);
+	memset(image_data, 0, Screen_WIDTH * Screen_HEIGHT);
 
 	keyboard_consol = INPUT_CONSOL_NONE;
 
@@ -2391,7 +2337,7 @@ void PLATFORM_DisplayScreen(void)
 				for (y = clipping_y; y < (clipping_y + clipping_height); y++) { \
 					for (x = clipping_x; x < (clipping_x + clipping_width); x++) { \
 						help_color = colours[*ptr2++]; \
-						if (help_color != *ptr) { \
+						if (help_color != *ptr || force_redraw) { \
 							SHM_SET_LAST \
 							*ptr = help_color; \
 						} \
@@ -2407,7 +2353,7 @@ void PLATFORM_DisplayScreen(void)
 					pixel_type *ptr_second_line = ptr + window_width; \
 					for (x = clipping_x; x < (clipping_x + clipping_width); x++) { \
 						help_color = colours[*ptr2++]; \
-						if (help_color != *ptr) { \
+						if (help_color != *ptr || force_redraw) { \
 							SHM_SET_LAST \
 							ptr[0] = help_color; \
 							ptr[1] = help_color; \
@@ -2429,7 +2375,7 @@ void PLATFORM_DisplayScreen(void)
 					pixel_type *ptr_third_line = ptr + window_width + window_width; \
 					for (x = clipping_x; x < (clipping_x + clipping_width); x++) { \
 						help_color = colours[*ptr2++]; \
-						if (help_color != *ptr) { \
+						if (help_color != *ptr || force_redraw) { \
 							SHM_SET_LAST \
 							ptr[0] = help_color; \
 							ptr[1] = help_color; \
@@ -2511,7 +2457,7 @@ void PLATFORM_DisplayScreen(void)
 			for (y = 0; y < clipping_height; y++) {
 				for (x = 0; x < clipping_width; x++) {
 					UBYTE colour = *ptr2++;
-					if (colour != *ptr) {
+					if (colour != *ptr || force_redraw) {
 						*ptr = colour;
 						if (colour != last_colour || n >= NPOINTS) {
 							if (n > 0) {
@@ -2541,7 +2487,7 @@ void PLATFORM_DisplayScreen(void)
 			for (y = 0; y < window_height; y += 2) {
 				for (x = 0; x < window_width; ) {
 					UBYTE colour = *ptr2++;
-					if (colour != *ptr) {
+					if (colour != *ptr || force_redraw) {
 						int width = 2;
 						*ptr++ = colour;
 						if (colour != last_colour || n >= NRECTS) {
@@ -2581,7 +2527,7 @@ void PLATFORM_DisplayScreen(void)
 			for (y = 0; y < window_height; y += 3) {
 				for (x = 0; x < window_width; ) {
 					UBYTE colour = *ptr2++;
-					if (colour != *ptr) {
+					if (colour != *ptr || force_redraw) {
 						int width = 3;
 						*ptr++ = colour;
 						if (colour != last_colour || n >= NRECTS) {
@@ -2999,6 +2945,102 @@ int PLATFORM_TRIG(int num)
 #endif
 
 	return trig;
+}
+
+void PLATFORM_PaletteUpdate(void)
+{
+	int i, j;
+	int depth;
+	int colorstep;
+	XGCValues xgcvl;
+
+	depth = XDefaultDepthOfScreen(screen);
+	cmap = XDefaultColormapOfScreen(screen);
+
+	if (depth <= 8)
+		colorstep = 2;
+	else
+		colorstep = 1;
+
+	if (colors_allocated) {
+		if (colorstep == 1)
+			XFreeColors(display, cmap, colours, 256, 0);
+		else {
+			for (i = 0; i < 256; i += colorstep)
+				XFreeColors(display, cmap, colours + i, 1, 0);
+		}
+	}
+
+	for (i = 0; i < 256; i += colorstep) {
+		XColor colour;
+
+		int rgb = Colours_table[i];
+		int status;
+
+		colour.red = (rgb & 0x00ff0000) >> 8;
+		colour.green = (rgb & 0x0000ff00);
+		colour.blue = (rgb & 0x000000ff) << 8;
+
+		status = XAllocColor(display,
+							 cmap,
+							 &colour);
+
+		if (! status) {
+			printf("Could not allocate color\n");
+			exit(1);
+		}
+
+		for (j = 0; j < colorstep; j++)
+			colours[i + j] = colour.pixel;
+
+#ifdef SHM
+#ifdef USE_COLOUR_TRANSLATION_TABLE
+		for (j = 0; j < colorstep; j++)
+			colour_translation_table[i + j] = colours[i + j] | (colours[i + j] << 8);
+#endif
+#endif
+	}
+
+	if (! colors_allocated) {
+		for (i = 0; i < 256; i++) {
+			xgcvl.background = colours[0];
+			xgcvl.foreground = colours[i];
+
+			gc_colour[i] = XCreateGC(display, window,
+									 GCForeground | GCBackground,
+									 &xgcvl);
+		}
+
+		xgcvl.background = colours[0];
+		xgcvl.foreground = colours[0];
+
+		gc = XCreateGC(display, window,
+					   GCForeground | GCBackground,
+					   &xgcvl);
+
+	}
+	else {
+		for (i = 0; i < 256; i++) {
+			xgcvl.background = colours[0];
+			xgcvl.foreground = colours[i];
+
+			XChangeGC(display, gc_colour[i],
+					  GCForeground | GCBackground,
+					  &xgcvl);
+		}
+
+		xgcvl.background = colours[0];
+		xgcvl.foreground = colours[0];
+
+		XChangeGC(display, gc,
+				  GCForeground | GCBackground,
+				  &xgcvl);
+
+		force_redraw = TRUE;
+		PLATFORM_DisplayScreen();
+		force_redraw = FALSE;
+	}
+	colors_allocated = TRUE;
 }
 
 void Atari_Mouse(void)

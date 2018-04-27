@@ -127,6 +127,9 @@
 #ifdef AF80
 #include "af80.h"
 #endif
+#ifdef BIT3
+#include "bit3.h"
+#endif
 #ifdef NTSC_FILTER
 #include "filter_ntsc.h"
 #endif
@@ -164,6 +167,7 @@ int Atari800_nframes = 0;
 int Atari800_refresh_rate = 1;
 int Atari800_collisions_in_skipped_frames = FALSE;
 int Atari800_turbo = FALSE;
+int Atari800_start_in_monitor = FALSE;
 int Atari800_auto_frameskip = FALSE;
 
 #ifdef BENCHMARK
@@ -261,6 +265,11 @@ void Atari800_Coldstart(void)
 		AF80_InsertRightCartridge();
 	}
 #endif
+#ifdef BIT3
+	if (BIT3_enabled) {
+		BIT3_Reset();
+	}
+#endif
 }
 
 int Atari800_LoadImage(const char *filename, UBYTE *buffer, int nbytes)
@@ -282,15 +291,19 @@ int Atari800_LoadImage(const char *filename, UBYTE *buffer, int nbytes)
 	return TRUE;
 }
 
-#define COPY_EMUOS(padding) do { \
-		memset(MEMORY_os, 0, padding); \
-		memcpy(MEMORY_os + (padding), emuos_h, 0x2000); \
-	} while (0)
+static void copy_emuos(int machine_type) {
+	int rom_start_addr, padding;
+
+	rom_start_addr = Atari800_machine_type == Atari800_MACHINE_800 ? 0xd800 : 0xc000;
+	padding = 0x10000 - rom_start_addr - sizeof(emuos_h);
+	memset(MEMORY_os, 0, padding);
+	memcpy(MEMORY_os + padding, emuos_h, sizeof(emuos_h));
+}
 
 static int load_roms(void)
 {
 	if (Atari800_machine_type != Atari800_MACHINE_5200 && emuos_mode == 2) {
-		COPY_EMUOS(Atari800_machine_type == Atari800_MACHINE_800 ? 0x800 : 0x2000);
+		copy_emuos(Atari800_machine_type);
 		Atari800_os_version = -1;
 	}
 	else {
@@ -301,7 +314,7 @@ static int load_roms(void)
 			/* Missing OS ROM. */
 			Atari800_os_version = -1;
 			if (Atari800_machine_type != Atari800_MACHINE_5200 && emuos_mode == 1)
-				COPY_EMUOS(Atari800_machine_type == Atari800_MACHINE_800 ? 0x800 : 0x2000);
+				copy_emuos(Atari800_machine_type);
 			else
 				/* No OS ROM loaded. */
 				return FALSE;
@@ -424,6 +437,7 @@ int Atari800_Initialise(int *argc, char *argv[])
 
 	/* try to find ROM images if the configuration file is not found
 	   or it does not specify some ROM paths (blank paths count as specified) */
+#ifndef ANDROID
 	SYSROM_FindInDir(".", TRUE); /* current directory */
 #if defined(unix) || defined(__unix__) || defined(__linux__)
 	SYSROM_FindInDir("/usr/share/atari800", TRUE);
@@ -443,6 +457,8 @@ int Atari800_Initialise(int *argc, char *argv[])
 		SYSROM_FindInDir(atari800_exe_rom_dir, TRUE);
 #endif
 	}
+#endif /* ANDROID */
+
 	/* finally if nothing is found, set some defaults to make
 	   the configuration file easier to edit */
 	SYSROM_SetDefaults();
@@ -640,6 +656,18 @@ int Atari800_Initialise(int *argc, char *argv[])
 			else if (strcmp(argv[i], "-no-autosave-config") == 0)
 				CFG_save_on_exit = FALSE;
 #endif /* BASIC */
+			else if (strcmp(argv[i], "-monitor") == 0)
+				Atari800_start_in_monitor = TRUE;
+#ifdef MONITOR_HINTS
+			else if (strcmp(argv[i], "-label-file") == 0)
+				if (i_a) MONITOR_PreloadLabelFile(argv[++i]); else a_m = TRUE;
+#endif /* MONITOR_HINTS */
+#ifdef MONITOR_BREAK
+			else if (strcmp(argv[i], "-bbrk") == 0)
+				MONITOR_BBRK_on();
+			else if (strcmp(argv[i], "-bpc") == 0)
+				if (i_a) MONITOR_BPC(argv[++i]); else a_m = TRUE;
+#endif /* MONITOR_BREAK */
 			else {
 				/* all options known to main module tried but none matched */
 
@@ -680,6 +708,9 @@ int Atari800_Initialise(int *argc, char *argv[])
 					Log_print("\t-rdevice [<dev>] Enable R: emulation (using serial device <dev>)");
 #endif
 					Log_print("\t-turbo           Run emulated Atari as fast as possible");
+#ifdef MONITOR_HINTS
+					Log_print("\t-label-file <f>  Load monitor labels from file <f>");
+#endif
 					Log_print("\t-v               Show version/release number");
 				}
 
@@ -737,6 +768,9 @@ int Atari800_Initialise(int *argc, char *argv[])
 #endif
 #ifdef AF80
 		|| !AF80_Initialise(argc, argv)
+#endif
+#ifdef BIT3
+		|| !BIT3_Initialise(argc, argv) 
 #endif
 #ifdef NTSC_FILTER
 		|| !FILTER_NTSC_Initialise(argc, argv)
@@ -954,6 +988,9 @@ int Atari800_Exit(int run_monitor)
 #endif
 #ifdef AF80
 		AF80_Exit();
+#endif
+#ifdef BIT3
+		BIT3_Exit();
 #endif
 #ifndef BASIC
 		INPUT_Exit();	/* finish event recording */
@@ -1470,7 +1507,8 @@ void Atari800_SetTVMode(int mode)
 #endif
 #ifdef SOUND
 #ifdef SOUND_THIN_API
-		POKEYSND_Init(POKEYSND_FREQ_17_EXACT, Sound_out.freq, Sound_out.channels, Sound_out.sample_size == 2 ? POKEYSND_BIT16 : 0);
+		if (Sound_enabled)
+			POKEYSND_Init(POKEYSND_FREQ_17_EXACT, Sound_out.freq, Sound_out.channels, Sound_out.sample_size == 2 ? POKEYSND_BIT16 : 0);
 #elif defined(SUPPORTS_SOUND_REINIT)
 		Sound_Reinit();
 #endif /* defined(SUPPORTS_SOUND_REINIT) */

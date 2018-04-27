@@ -169,7 +169,6 @@ char SIO_status[256];
 #define SIO_WriteFrame      (0x04)
 #define SIO_FinalStatus     (0x05)
 #define SIO_FormatFrame     (0x06)
-#define SIO_CasReadWrite    (0x60)
 static UBYTE CommandFrame[6];
 static int CommandIndex = 0;
 static UBYTE DataBuffer[256 + 3];
@@ -386,9 +385,9 @@ int SIO_Mount(int diskno, const char *filename, int b_open_readonly)
 			trackoffset += next;
 		}
 
-		info = Util_malloc(sizeof(vapi_additional_info_t));
+		info = (vapi_additional_info_t *)Util_malloc(sizeof(vapi_additional_info_t));
 		additional_info[diskno-1] = info;
-		info->sectors = Util_malloc(sectorcount[diskno - 1] * 
+		info->sectors = (vapi_sec_info_t *)Util_malloc(sectorcount[diskno - 1] * 
  					    sizeof(vapi_sec_info_t));
 		memset(info->sectors, 0, sectorcount[diskno - 1] * 
  					 sizeof(vapi_sec_info_t));
@@ -511,9 +510,9 @@ int SIO_Mount(int diskno, const char *filename, int b_open_readonly)
 				sectorcount[diskno - 1] = 720;
 			}
 
-			info = Util_malloc(sizeof(pro_additional_info_t));
+			info = (pro_additional_info_t *)Util_malloc(sizeof(pro_additional_info_t));
 			additional_info[diskno-1] = info;
-			info->count = Util_malloc(sectorcount[diskno - 1]);
+			info->count = (unsigned char *)Util_malloc(sectorcount[diskno - 1]);
 			memset(info->count, 0, sectorcount[diskno -1]);
 			info->max_sector = (file_length-16)/(128+12);
 		}
@@ -600,7 +599,7 @@ void SIO_SizeOfSector(UBYTE unit, int sector, int *sz, ULONG *ofs)
 		vapi_sec_info_t *secinfo;
 
 		size = 128;
-		info = additional_info[unit];
+		info = (vapi_additional_info_t *)additional_info[unit];
 		if (info == NULL)
 			offset = 0;
 		else if (sector > sectorcount[unit])
@@ -1112,7 +1111,7 @@ static int last_ypos = 0;
 void SIO_Handler(void)
 {
 	int sector = MEMORY_dGetWordAligned(0x30a);
-	UBYTE unit = (MEMORY_dGetByte(0x300) + MEMORY_dGetByte(0x301) + 0xff ) - 0x31;
+	UBYTE unit = MEMORY_dGetByte(0x300) + MEMORY_dGetByte(0x301) + 0xff;
 	UBYTE result = 0x00;
 	UWORD data = MEMORY_dGetWordAligned(0x304);
 	int length = MEMORY_dGetWordAligned(0x308);
@@ -1125,8 +1124,22 @@ void SIO_Handler(void)
 	}
 	/* A real atari just adds the bytes and 0xff. The result could wrap.*/
 	/* XL OS: E99D: LDA $0300 ADC $0301 ADC #$FF STA 023A */
+
+	/* The OS SIO routine copies decide ID do CDEVIC, command ID to CCOMND etc.
+	   This operation is not needed with the SIO patch enabled, but we perform
+	   it anyway, since some programs rely on that. (E.g. the E.T Phone Home!
+	   cartridge would crash with SIO patch enabled.)
+	   Note: While on a real XL OS the copying is done only for SIO devices
+	   (not for PBI ones), here we copy the values for all types of devices -
+	   it's probably harmless. */
+	MEMORY_dPutByte(0x023a, unit); /* sta CDEVIC */
+	MEMORY_dPutByte(0x023b, cmd); /* sta CCOMND */
+	MEMORY_dPutWordAligned(0x023c, sector); /* sta CAUX1; sta CAUX2 */
+
 	/* Disk 1 is ASCII '1' = 0x31 etc */
 	/* Disk 1 -> unit = 0 */
+	unit -= 0x31;
+
 	if (MEMORY_dGetByte(0x300) != 0x60 && unit < SIO_MAX_DRIVES && (SIO_drive_status[unit] != SIO_OFF || BINLOAD_start_binloading)) {	/* UBYTE range ! */
 #ifdef DEBUG
 		Log_print("SIO disk command is %02x %02x %02x %02x %02x   %02x %02x %02x %02x %02x %02x",
@@ -1238,9 +1251,6 @@ void SIO_Handler(void)
 		UBYTE gaps = MEMORY_dGetByte(0x30b);
 		switch (cmd){
 		case 0x52:	/* read */
-			SIO_last_op = SIO_LAST_READ;
-			SIO_last_drive = 0x61;
-			SIO_last_op_time = 0x10;
 			/* set expected Gap */
 			CASSETTE_AddGap(gaps == 0 ? 2000 : 160);
 			/* get record from storage medium */
@@ -1250,9 +1260,6 @@ void SIO_Handler(void)
 				result = 'E';
 			break;
 		case 0x57:	/* write */
-			SIO_last_op = SIO_LAST_WRITE;
-			SIO_last_drive = 0x61;
-			SIO_last_op_time = 0x10;
 			/* add pregap length */
 			CASSETTE_AddGap(gaps == 0 ? 3000 : 260);
 			/* write full record to storage medium */
@@ -1268,21 +1275,24 @@ void SIO_Handler(void)
 
 	switch (result) {
 	case 0x00:					/* Device disabled, generate timeout */
-		CPU_regY = 138;
+		CPU_regY = 138; /* TIMOUT: peripheral device timeout error */
 		CPU_SetN;
 		break;
 	case 'A':					/* Device acknowledge */
 	case 'C':					/* Operation complete */
-		CPU_regY = 1;
+		CPU_regY = 1; /* SUCCES: successful operation */
 		CPU_ClrN;
 		break;
 	case 'N':					/* Device NAK */
-		CPU_regY = 144;
+		CPU_regY = 139; /* DNACK: device does not acknowledge command error */
 		CPU_SetN;
 		break;
 	case 'E':					/* Device error */
+		CPU_regY = 144; /* DERROR: device done (operation incomplete) error */
+		CPU_SetN;
+		break;
 	default:
-		CPU_regY = 146;
+		CPU_regY = 146; /* FNCNOT: function not implemented in handler error */
 		CPU_SetN;
 		break;
 	}
@@ -1477,26 +1487,6 @@ static UBYTE Command_Frame(void)
 	}
 }
 
-/* Enable/disable the Tape Motor */
-void SIO_TapeMotor(int onoff)
-{
-	CASSETTE_TapeMotor(onoff);
-	if (onoff) {
-		/* set frame to cassette frame, if not */
-		/* in a transfer with an intelligent peripheral */
-		if (TransferStatus == SIO_NoFrame || TransferStatus == SIO_CasReadWrite)
-			TransferStatus = SIO_CasReadWrite;
-		SIO_last_drive = 0x60;
-		SIO_last_op_time = 0x10;
-	}
-	else {
-		/* set frame to none */
-		if (TransferStatus == SIO_CasReadWrite)
-			TransferStatus = SIO_NoFrame;
-		SIO_last_op_time = 0;
-	}
-}
-
 /* Enable/disable the command frame */
 void SIO_SwitchCommandFrame(int onoff)
 {
@@ -1593,10 +1583,8 @@ void SIO_PutByte(int byte)
 			Log_print("Invalid data frame!");
 		}
 		break;
-	case SIO_CasReadWrite:
-		CASSETTE_PutByte(byte);
-		break;
 	}
+	CASSETTE_PutByte(byte);
 	/* POKEY_DELAYED_SEROUT_IRQ = SIO_SEROUT_INTERVAL; */ /* already set in pokey.c */
 }
 
@@ -1648,10 +1636,8 @@ int SIO_GetByte(void)
 			TransferStatus = SIO_NoFrame;
 		}
 		break;
-	case SIO_CasReadWrite:
-		byte = CASSETTE_GetByte();
-		break;
 	default:
+		byte = CASSETTE_GetByte();
 		break;
 	}
 	return byte;

@@ -12,6 +12,12 @@
 /* Target: standard I/O. */
 #undef BASIC
 
+/* The Bit3 Full View 80 column card. */
+#undef BIT3
+
+/* Define to allocate the screen back buffer. */
+#undef BITPL_SCR
+
 /* Define to use buffered debug output. */
 #undef BUFFERED_LOG
 
@@ -47,6 +53,10 @@
 
 /* Define to enable DOS style drives support. */
 #undef DOS_DRIVES
+
+/* Define to use Altirra emulated OS instead of bootstrap OS when real ROMs
+   are not available. */
+#undef EMUOS_ALTIRRA
 
 /* Define to enable event recording. */
 #undef EVENT_RECORDING
@@ -174,6 +184,9 @@
 
 /* Support for OpenGL graphics acceleration. */
 #undef HAVE_OPENGL
+
+/* Define to 1 if you have the `popen' function. */
+#undef HAVE_POPEN
 
 /* Define to 1 if you have the `rename' function. */
 #undef HAVE_RENAME
@@ -335,6 +348,9 @@
 /* Define if mkdir takes only one argument. */
 #undef MKDIR_TAKES_ONE_ARG
 
+/* Define to use ANSI terminal control in the monitor. */
+#undef MONITOR_ANSI
+
 /* Define to activate assembler in monitor. */
 #undef MONITOR_ASSEMBLER
 
@@ -355,6 +371,9 @@
 
 /* Define to activate TRACE command in monitor. */
 #undef MONITOR_TRACE
+
+/* Define to use UTF-8 in the monitor. */
+#undef MONITOR_UTF8
 
 /* Target: X11 with Motif. */
 #undef MOTIF
@@ -406,6 +425,9 @@
 
 /* Platform-specific mapping of RGB palette to display surface. */
 #undef PLATFORM_MAP_PALETTE
+
+/* Use 8-bit signed samples. */
+#undef POKEYSND_SIGNED_SAMPLES
 
 /* Target: Sony PlayStation 2. */
 #undef PS2
@@ -538,6 +560,11 @@
 
 /* Target: X11 with XView. */
 #undef XVIEW
+
+/* Enable large inode numbers on Mac OS X 10.5.  */
+#ifndef _DARWIN_USE_64_BIT_INODE
+# define _DARWIN_USE_64_BIT_INODE 1
+#endif
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 #undef _FILE_OFFSET_BITS
