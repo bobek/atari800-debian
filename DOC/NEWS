@@ -1,4 +1,67 @@
+Version 4.1.0 (2019/04/13) - release cooked at Atariada.cz (again :-)
+==========================
+
+ New Features:
+ -------------
+  * Atari800 now includes Altirra BIOS-es for all emulated systems: 400/800,
+    XL/XE, and 5200; as well as Altirra BASIC. It is now possible to use the
+    emulator without providing any ROM images.
+
+  * The Altirra OS-es and Altirra BASIC can now be selected by users in the
+    "System settings", if they want to use them. Previously Altirra OS was used
+    automatically only when no other OS ROMs were found.
+
+  * joyhat support for all four real joysticks, configurable in CLI/cfg/TUI
+
+
+ Notable changes:
+ ----------------
+  * All documentation specific to building Atari800 on Windows has been moved
+    from DOC/INSTALL to a new file, DOC/BUILD.windows. This document
+    has also been expanded with a new chapter covering building Atari800 using
+    MSYS2.
+
+  * Ability to use the built-in EmuOS firmware has been removed. Users wishing
+    to run Atari800 without providing OS ROMs now have an option of using the
+    built-in Altirra OS-es, which are compatible with much more Atari software
+    than EmuOS.
+    At the same time, it is still possible to compile a version of Atari800
+    without any OS ROMs built in, by means of the --disable-altirra_bios
+    configure option.
+
+
+ Port specific improvements:
+ ---------------------------
+ == Atari Falcon ==
+  * More Videl/screen handling fixes
+  * Ability to run Atari800 in an AES-less environment
+  * Replaced C2P with MMU friendly and faster code
+  * Atari800 should run on all TOS clones with XBIOS Sound API
+
+ == Android ==
+  * Fixed building of the Android target, broken in the previous release.
+  * Fixed labels on console keys (unreadable on hi-res displays)
+  * Fixed console keys press detection
+  * Fixed "right-handed joystick" trigger press
+
+ == Raspberry Pi ==
+  * updated build documentation
+  * find proper Broadcom GLes libraries
+  * fixed bug in GRAPHICS 9 (shifted colors)
+
+ == MS Windows ==
+  * updated build documentation
+
+
+ General Fixes:
+ --------------
+  * updated build documentation
+  * it is possible to build atari800 out of source tree
+  * unconnected host joysticks initialized properly, fixes the MULE game
+
+
 Version 4.0.0 (2018/04/21) - release cooked at Atariada.cz
+==========================
 
  This release brings four years of hard work of fellow Atari800 developers
  on improvements and bugfixes of our favorite Atari emulator.
@@ -27,6 +90,7 @@ Version 4.0.0 (2018/04/21) - release cooked at Atariada.cz
   * Delete the emulator's config file (.atari800.cfg). Caution: you'll lose
     all Atari800 settings!
 
+
  New features:
  -------------
   * Support for loading of CAS images with "fsk" chunks - images of
@@ -45,16 +109,37 @@ Version 4.0.0 (2018/04/21) - release cooked at Atariada.cz
   * new command line switch "-volume" (for 16bit sound output) that can set
     the output volume of the Atari 800 emulator with value from 0 to 100.
 
- Changes:
- --------
+
+ Notable Changes:
+ ----------------
   * The Sound Settings option "Fragment size" has been renamed to less cryptic
     "Hardware buffer size".
   * Total emulator volume is lower now because the output has been shifted
     in order to fix a possible annoying humming sound in silence on some
     receivers (TV sets).
 
- Fixes:
- ------
+
+ Port specific improvements:
+ ---------------------------
+ == Atari ST/TT/Falcon ==
+  * CPU emulation fixes for the assembly target (now synchronised with the
+    mainline code, incl. the cycle exact mode)
+  * Stereo POKEY support
+  * Video enhancements: flicker-less rendering & RGB monitors support
+  * SuperVidel support (that means much faster direct rendering using its
+    8-bit chunky mode)
+  * Many small fixes and optimisations
+
+ == Android ==
+  * Built-in Planetary Defense 2012 by Tom Hudson, an enhanced version of 
+    the classic game with emulated touchscreen controls.
+  * New feature: Native sound playback for post 2.3 devices, automatically 
+    enabled. Eliminates stuttering and inconsistent timing of previous 
+    implementation.
+
+
+ General Fixes:
+ --------------
   * Fixed computation of gamma adjustment - now it is applied to each of the
     three RGB channels separately.
   * On systems that support synchronized sound: Fixed the emulator crashing
@@ -65,6 +150,7 @@ Version 4.0.0 (2018/04/21) - release cooked at Atariada.cz
 
 
 Version 3.1.0 (2014/04/12) - release cooked at Atariada.cz
+==========================
 
   Highlight of this release: Raspberry Pi port by Andrey Dj
 
@@ -101,6 +187,7 @@ Version 3.1.0 (2014/04/12) - release cooked at Atariada.cz
 
 
 Version 3.0.0 (2013/03/03)
+==========================
 
  New features:
  -------------
@@ -220,6 +307,7 @@ Version 3.0.0 (2013/03/03)
 
 
 Version 2.2.1 (2011/04/28)
+==========================
 
   Quick update fixing some annoying bugs from the previous release
   and adding some new host screen optimizations and improvements:
@@ -240,6 +328,7 @@ Version 2.2.1 (2011/04/28)
 
 
 Version 2.2.0 (2011/04/02)
+==========================
 
  Another update after two long years. A lot of changes and major improvements:
 
