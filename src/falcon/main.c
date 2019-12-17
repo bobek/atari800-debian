@@ -102,7 +102,7 @@ static int vga;
 static int vga50;
 static int sv;
 
-static short gl_app_id;
+static short gl_app_id = -1;
 static short gl_vdi_handle;
 static XCB *NOVA_xcb;
 static int NOVA_double_size;
@@ -154,7 +154,7 @@ static UWORD mode336x240_vga50[26]= {
 	0x0000, 0x00a8, 0x0186, 0x0005, 0x00c6, 0x008d, 0x0015, 0x0292, 0x0083, \
 	0x0097, 0x0000, 0x0000, 0x04eb, 0x0465, 0x00a5, 0x00a5, 0x0465, 0x04e7
 };
-static const UWORD mode336x240_rgb[26]= {
+static UWORD mode336x240_rgb[26]= {
 	0x0133, 0x0001, 0x3b00, 0x0150, 0x00f0, 0x0008, 0x0002, 0x0010, \
 	0x0000, 0x00a8, 0x0185, 0x0000, 0x00c7, 0x00a0, 0x001f, 0x02b2, 0x0091, \
 	0x00ab, 0x0000, 0x0000, 0x0271, 0x0265, 0x002f, 0x0059, 0x0239, 0x026b
@@ -163,14 +163,19 @@ static const UWORD mode336x240_rgb[26]= {
 static int reprogram_VIDEL;
 static int new_videl_mode_valid;
 static UBYTE *new_videoram_unaligned;
+static UBYTE *Screen_atari_unaligned;
+static UBYTE *Screen_atari_b_unaligned;
 
 extern void rplanes(void);
 extern void rplanes_delta(void);
 extern void load_r(void);
 extern void save_r(void);
-extern ULONG *p_str_p;
+extern UWORD *p_str_p;
+extern void store_palette();
+extern void restore_palette();
+extern void set_falcon_palette();
 
-static ULONG f030coltable[256], f030coltable_backup[256];
+static ULONG f030coltable[256];
 static short int coltable[256][3], coltable_backup[256][3];
 
 /* -------------------------------------------------------------------------- */
@@ -188,9 +193,9 @@ static void SwapScreen()
 	size_t offset;
 
 	/* always wait at least one VBL before swapping the screen */
-	for (new_frclock = (ULONG)get_sysvar(_frclock);
+	for (new_frclock = (ULONG)get_sysvar((void*)_frclock);
 		 new_frclock == old_frclock;
-		 new_frclock = (ULONG)get_sysvar(_frclock));
+		 new_frclock = (ULONG)get_sysvar((void*)_frclock));
 	old_frclock = new_frclock;
 
 	if (delta_screen || SCREEN_BUFFERS < 2) {
@@ -229,9 +234,13 @@ static void set_colors(int new)
 	int i;
 
 	if (reprogram_VIDEL) {
-		VsetRGB(0, 256, new ? f030coltable : f030coltable_backup);
-	}
-	else {
+		if (new) {
+			p_str_p = (UWORD*) f030coltable;
+			Supexec(set_falcon_palette);
+		} else {
+			Supexec(restore_palette);
+		}
+	} else {
 		for(i=0; i<256; i++)
 			vs_color(gl_vdi_handle, i, new ? coltable[i] : coltable_backup[i]);
 	}
@@ -242,9 +251,8 @@ static void save_original_colors(void)
 	int i;
 
 	if (reprogram_VIDEL) {
-		VgetRGB(0, 256, f030coltable_backup);
-	}
-	else {
+		Supexec(store_palette);
+	} else {
 		for(i=0; i<256; i++)
 			vq_color(gl_vdi_handle, i, 1, coltable_backup[i]);
 	}
@@ -256,19 +264,20 @@ static void restore_original_colors(void) { set_colors(0); }
 
 /* -------------------------------------------------------------------------- */
 
+static int setup_done;
 static void SetupEmulatedEnvironment(void)
 {
 	if (reprogram_VIDEL) {
 		size_t offset;
 
 		/* save original VIDEL settings */
-		p_str_p = (ULONG *) original_videl_settings;
+		p_str_p = original_videl_settings;
 		Supexec(save_r);
 
 		/* set new video resolution by direct VIDEL programming */
 		offset = sv ? (Screen_WIDTH - 336) / 2 : 0;	/* in pixels */
 		(void)VsetScreen(SCR_NOCHANGE, new_videobases[delta_screen ? 0 : SCREEN_BUFFERS-1] + offset, SCR_NOCHANGE, SCR_NOCHANGE);
-		p_str_p = (ULONG *)(vga ? (vga50 ? mode336x240_vga50 : mode336x240_vga) : mode336x240_rgb);
+		p_str_p = vga ? (vga50 ? mode336x240_vga50 : mode336x240_vga) : mode336x240_rgb;
 		Supexec(load_r);
 		new_videl_mode_valid = 1;
 	}
@@ -278,13 +287,18 @@ static void SetupEmulatedEnvironment(void)
 	Supexec(init_kb);	/* our keyboard routine */
 
 	Bconout(4, 0x14);	/* joystick init */
+
+	setup_done = TRUE;
 }
 
 static void ShutdownEmulatedEnvironment(void)
 {
+	if (!setup_done)
+		return;
+
 	if (new_videl_mode_valid) {
 		/* restore original VIDEL mode */
-		p_str_p = (ULONG *) original_videl_settings;
+		p_str_p = original_videl_settings;
 		Supexec(load_r);
 		new_videl_mode_valid = 0;
 		(void)VsetScreen(SCR_NOCHANGE, Original_Phys_base, SCR_NOCHANGE, SCR_NOCHANGE);
@@ -295,17 +309,29 @@ static void ShutdownEmulatedEnvironment(void)
 	Supexec(rem_kb);	/* original keyboard routine */
 
 	Bconout(4, 8);		/* joystick disable */
+
+	setup_done = FALSE;
 }
 
 /* -------------------------------------------------------------------------- */
+
+static void PrintError(const char* msg)
+{
+	if (gl_app_id != -1) {
+		char buf[255+1];
+		sprintf(buf, "[1][%s][ OK ]", msg);
+		form_alert(1, buf);
+	} else {
+		Log_print(msg);
+		Log_print("Press enter to exit.");
+		getchar();
+	}
+}
 
 int PLATFORM_Initialise(int *argc, char *argv[])
 {
 	int i;
 	int j;
-
-	short work_in[11], work_out[272];
-	short maxx, maxy, maxw, maxh, wcell, hcell, wbox, hbox;
 	long video_hardware;
 	int force_videl = FALSE;	/* force Atari800 to switch VIDEL into new resolution by direct HW programming */
 
@@ -355,10 +381,8 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 		UBYTE g = Colours_GetG(i);
 		UBYTE b = Colours_GetB(i);
 
-		/* Native:  RRRRRRrrGGGGGGgg--------BBBBBBbb
-		f030coltable[i] = (r << 24) | (g << 16) | b;*/
-		/* VsetRGB: --------RRRRRRRRGGGGGGGGBBBBBBBB */
-		f030coltable[i] = (r << 16) | (g << 8) | b;
+		/* Native:  RRRRRRrrGGGGGGgg--------BBBBBBbb */
+		f030coltable[i] = (r << 24) | (g << 16) | b;
 		if (sv) {
 			coltable[i][0] = r * 1000 / 255;
 			coltable[i][1] = g * 1000 / 255;
@@ -376,6 +400,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 	/* check for VIDEL hardware */
 	if (Getcookie(C__VDO, &video_hardware) == C_NOTFOUND)
 		video_hardware = 0;
+
 	switch(video_hardware >> 16) {
 		case 2:
 			video_hw = TT030;
@@ -392,45 +417,34 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 			bitplanes = FALSE;
 	}
 
-	vga = VgetMonitor() == MON_VGA;
+	vga = (video_hw == F030) ? VgetMonitor() == MON_VGA : TRUE;
 
 	/* check for the SuperVidel */
 	if (Getcookie(C_SupV, NULL) == C_FOUND && vga)
 		sv = TRUE;
 
-	/* GEM init */
-	gl_app_id = appl_init();
-	if (gl_app_id == -1)
-		goto exit_appl_init;
-	graf_mouse(M_OFF, NULL);
-	wind_get(0, WF_WORKXYWH, &maxx, &maxy, &maxw, &maxh);
-
-	gl_vdi_handle = graf_handle(&wcell, &hcell, &wbox, &hbox);
-
-	if (Getcookie(C_EdDI, NULL) == C_FOUND) {
-		vq_scrninfo(gl_vdi_handle, work_out);
-		bitplanes = (work_out[0] != 2);
-	} else {
-		/* guess some common setups */
-		if (Getcookie(C_NOVA, (long int*)&NOVA_xcb) == C_FOUND)
-			bitplanes = FALSE;
-		else if (Getcookie(C_fVDI, NULL) == C_FOUND)
-			bitplanes = FALSE;
-		else if (sv && (VsetMode(VM_INQUIRE) & BPS8C) == BPS8C)
-			bitplanes = FALSE;
+	if (!force_videl || !sv) {
+		if ((Screen_atari_unaligned = (UBYTE*)Mxalloc(Screen_HEIGHT*Screen_WIDTH+15, MX_PREFTTRAM)) == NULL) {
+			PrintError("Error allocating Screen_atari.");
+			return FALSE;
+		}
+		Screen_atari = (ULONG*)(((ULONG)Screen_atari_unaligned + 15) & ~15);
+		memset(Screen_atari, 0, Screen_HEIGHT * Screen_WIDTH);
 	}
 
-	work_in[0] = Getrez() + 2;
-	for(i = 1;i < 10;work_in[i++] = 1);
-	work_in[10] = 2;
-	v_opnvwk(work_in, &gl_vdi_handle, work_out);
+#ifdef BITPL_SCR
+	if (delta_screen && !sv) {
+		if ((Screen_atari_b_unaligned = (UBYTE*)Mxalloc(Screen_HEIGHT*Screen_WIDTH+15, MX_PREFTTRAM)) == NULL) {
+			PrintError("Error allocating Screen_atari.");
+			return FALSE;
+		}
+		Screen_atari_b = (ULONG*)(((ULONG)Screen_atari_b_unaligned + 15) & ~15);
+		memset(Screen_atari_b, 0, Screen_HEIGHT * Screen_WIDTH);
 
-	/* get current screen size and color depth */
-	HOST_WIDTH = work_out[0] + 1;
-	HOST_HEIGHT = work_out[1] + 1;
-
-	vq_extnd(gl_vdi_handle, 1, work_out);
-	HOST_PLANES = work_out[4];
+		Screen_atari1 = Screen_atari;
+		Screen_atari2 = Screen_atari_b;
+	}
+#endif
 
 	if (force_videl && video_hw == F030) {	/* we may switch VIDEL directly */
 		int buffers = (delta_screen && !sv) ? 1 : SCREEN_BUFFERS;
@@ -438,8 +452,8 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 		vramh = screenh = Screen_HEIGHT;
 
 		if ((new_videoram_unaligned = (UBYTE*)Mxalloc(buffers*vramw*vramh+15, MX_STRAM)) == NULL) {
-			form_alert(1, "[1][Error allocating video memory ][ OK ]");
-			goto exit_gem;
+			PrintError("Error allocating video memory.");
+			return FALSE;
 		}
 
 		new_videobases[0] = (UBYTE*)(((ULONG)new_videoram_unaligned + 15) & ~15);
@@ -475,33 +489,88 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 
 		/* create new graphics mode {336|384}x240 in 256 colors */
 		reprogram_VIDEL = TRUE;
-	}
-	else if (HOST_PLANES == 8 && HOST_WIDTH >= 320 && HOST_HEIGHT >= Screen_HEIGHT) {
-		/* current resolution is OK */
-		vramw = HOST_WIDTH;
-		vramh = HOST_HEIGHT;
+	} else {
+		short work_in[16], work_out[272];
 
-		if (vramw >= 352)
-			screenw = 352;
-		else
-			screenw = 320;
-		screenh = Screen_HEIGHT;
+		/* GEM init */
+		gl_app_id = appl_init();
 
-		sv = FALSE;
-	}
-	else {
-		/* we may also try to switch into proper resolution using XBios call and then
-		   reinitialize VDI - we've been told it would work OK */
-		if (video_hw == F030)
-			form_alert(1, "[1][Atari800 emulator needs 320x240|or higher res. in 256 colors.|Or use the -videl switch.][ OK ]");
-		else
-			form_alert(1, "[1][Atari800 emulator needs 320x240|or higher res. in 256 colors.][ OK ]");
-		goto exit_gem;
-	}
+		if (gl_app_id == -1 && aes_global[0] != 0) {
+			PrintError("Failed to initialise the AES.");
+			return FALSE;
+		}
 
-	/* lock GEM */
-	v_clrwk(gl_vdi_handle);		/* clear whole screen */
-	wind_update(BEG_UPDATE);
+		if (gl_app_id == -1) {
+			appl_exit();
+		}
+
+		memset(work_in, 0, sizeof(work_in));
+		work_in[0] = 1;	/* current resolution */
+		for(i = 1; i < 10; work_in[i++] = 1);
+		work_in[10] = 2;
+
+		if (gl_app_id != -1) {
+			short wcell, hcell, wbox, hbox;
+			gl_vdi_handle = graf_handle(&wcell, &hcell, &wbox, &hbox);
+			v_opnvwk(work_in, &gl_vdi_handle, work_out);
+		} else {
+			v_opnwk(work_in, &gl_vdi_handle, work_out);
+		}
+
+		if (gl_vdi_handle == 0) {
+			PrintError("Failed to open VDI workstation.");
+			return FALSE;
+		}
+
+		/* get current screen size and color depth */
+		HOST_WIDTH = work_out[0] + 1;
+		HOST_HEIGHT = work_out[1] + 1;
+
+		vq_extnd(gl_vdi_handle, 1, work_out);
+		HOST_PLANES = work_out[4];
+
+		if (Getcookie(C_EdDI, NULL) == C_FOUND) {
+			vq_scrninfo(gl_vdi_handle, work_out);
+			bitplanes = (work_out[0] != 2);
+		} else {
+			/* guess some common setups */
+			if (Getcookie(C_NOVA, (long int*)&NOVA_xcb) == C_FOUND)
+				bitplanes = FALSE;
+			else if (Getcookie(C_fVDI, NULL) == C_FOUND)
+				bitplanes = FALSE;
+			else if (sv && (VsetMode(VM_INQUIRE) & BPS8C) == BPS8C)
+				bitplanes = FALSE;
+		}
+
+		if (HOST_PLANES == 8 && HOST_WIDTH >= 320 && HOST_HEIGHT >= Screen_HEIGHT) {
+			/* current resolution is OK */
+			vramw = HOST_WIDTH;
+			vramh = HOST_HEIGHT;
+
+			if (vramw >= 336)
+				screenw = 336;
+			else
+				screenw = 320;
+			screenh = Screen_HEIGHT;
+
+			sv = FALSE;
+		} else {
+			/* we may also try to switch into proper resolution using XBios call and then
+			   reinitialize VDI - we've been told it would work OK */
+			if (video_hw == F030)
+				PrintError("Atari800 needs 320x240|or higher res. in 256 colors.|Or use the -videl switch.");
+			else
+				PrintError("Atari800 needs 320x240|or higher res. in 256 colors.");
+			return FALSE;
+		}
+
+		if (gl_app_id != -1) {
+			graf_mouse(M_OFF, NULL);
+			/* lock GEM */
+			wind_update(BEG_UPDATE);
+		}
+		v_clrwk(gl_vdi_handle);		/* clear whole screen */
+	}
 
 	save_original_colors();
 
@@ -525,13 +594,6 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 	SetupEmulatedEnvironment();
 
 	return TRUE;
-
-exit_gem:
-	graf_mouse(M_ON, NULL);
-	v_clsvwk(gl_vdi_handle);
-	appl_exit();
-exit_appl_init:
-	exit(-1);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -554,14 +616,29 @@ int PLATFORM_Exit(int run_monitor)
 
 	if (new_videoram_unaligned)
 		Mfree(new_videoram_unaligned);
+	if (Screen_atari_unaligned)
+		Mfree(Screen_atari_unaligned);
+#ifdef BITPL_SCR
+	if (Screen_atari_b_unaligned)
+		Mfree(Screen_atari_b_unaligned);
+#endif
 
-	/* unlock GEM */
-	wind_update(END_UPDATE);
-	form_dial(FMD_FINISH, 0, 0, 0, 0, 0, 0, HOST_WIDTH, HOST_HEIGHT);	/* redraw screen */
-	v_clsvwk(gl_vdi_handle);
-	graf_mouse(M_ON, NULL);
-	/* GEM exit */
-	appl_exit();
+	if (gl_app_id != -1) {
+		/* unlock GEM */
+		wind_update(END_UPDATE);
+		form_dial(FMD_FINISH, 0, 0, 0, 0, 0, 0, HOST_WIDTH, HOST_HEIGHT);	/* redraw screen */
+	}
+	if (!reprogram_VIDEL && gl_vdi_handle != 0) {
+		if (gl_app_id != -1)
+			v_clsvwk(gl_vdi_handle);
+		else
+			v_clswk(gl_vdi_handle);
+	}
+	if (gl_app_id != -1) {
+		graf_mouse(M_ON, NULL);
+		/* GEM exit */
+		appl_exit();
+	}
 
 #ifdef SCREENSAVER
 	Clocky_SS(Clocky_SSval);
@@ -605,10 +682,6 @@ void PLATFORM_DisplayScreen(void)
 	static int i = 0;
 	static ULONG Screen_ui[Screen_HEIGHT*Screen_WIDTH/sizeof(ULONG)];
 
-/*
-	if (! draw_display)
-		return;
-*/
 #ifdef SHOW_DISK_LED
 	if (LED_timeout)
 		if (--LED_timeout == 0)
