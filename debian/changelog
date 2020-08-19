@@ -1,3 +1,10 @@
+atari800 (4.1.0-3) unstable; urgency=medium
+
+  * Add icon into menu (Closes: Ubuntu#1575369)
+  * Bump standards to 4.5.0
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Wed, 19 Aug 2020 11:26:10 +0200
+
 atari800 (4.1.0-2) unstable; urgency=medium
 
   * Modernization of package infrastructure to be able to switch

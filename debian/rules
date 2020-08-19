@@ -42,13 +42,14 @@ clean:
 	mv ./atari800.spec ./tmp ; rm -f atari800 ; rm -f atari800.* ; mv ./tmp ./atari800.spec
 	-rm -rf	debian/tmp debian/*~ *~ *.orig *.log \
 		debian/files* debian/substvars*
+	-rm -f data/atari800.xpm
 
 
 install: build
 	dh_testdir
 	dh_testroot
 	dh_installdirs
-
+	convert data/atari2.png -resize 32x32 data/atari800.xpm
 	dh_install
 
 
