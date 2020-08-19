@@ -1,3 +1,10 @@
+atari800 (4.1.0-2) unstable; urgency=medium
+
+  * Modernization of package infrastructure to be able to switch
+    to e.g. dh_strip (Closes: #968532)
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Wed, 19 Aug 2020 11:05:34 +0200
+
 atari800 (4.1.0-1) unstable; urgency=medium
 
   * New upstream version 4.1.0

@@ -1,0 +1,2 @@
+debian/atari800.cfg usr/share/doc/atari800/
+src/atari800 usr/bin
