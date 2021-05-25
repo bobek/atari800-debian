@@ -21,7 +21,7 @@ dnl   along with Atari800; if not, write to the Free Software
 dnl   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 AC_PREREQ(2.57)
-AC_INIT(Atari800, 4.1.0, pstehlik@sophics.cz)
+AC_INIT(Atari800, 4.2.0, pstehlik@sophics.cz)
 AC_CONFIG_SRCDIR(src/atari.c)
 AC_CONFIG_HEADER(src/config.h)
 AC_CONFIG_MACRO_DIR([m4])
@@ -30,7 +30,7 @@ AC_CONFIG_MACRO_DIR([m4])
 dnl Set a8_target...
 
 case "$target" in
-    default | falcon | ps2 | rpi | android | windx | x11 | x11-shm | x11-motif | x11-xview | x11-xview-shm)
+    default | falcon | firebee | ps2 | rpi | android | windx | x11 | x11-shm | x11-motif | x11-xview | x11-xview-shm | libatari800)
         a8_target="$target"
         ;;
     shm | motif | xview | xview-shm)
@@ -49,9 +49,11 @@ case "$target" in
         echo "    default          (autodetect available graphics and sound libraries)"
         echo "    android          (Android devices)"
         echo "    falcon           (Atari Falcon: set --host=m68k-atari-mint)"
+        echo "    firebee          (FireBee: set --host=m68k-atari-mint)"
         echo "    ps2              (Sony PlayStation 2)"
         echo "    rpi              (Raspberry Pi: set --host=arm-linux)"
         echo "    windx            (Windows with DirectX only)"
+        echo "    libatari800      (Atari800 as a library (developers only))"
         echo "    x11              (Standard X11)"
         echo "    (x11-)motif      (Motif on X11)"
         echo "    (x11-)shm        (Standard X11 with shared memory extensions)"
@@ -73,6 +75,7 @@ dnl Silent rules
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 
 WANT_IDE="yes"
+WANT_POKEYREC="yes"
 
 dnl Set a8_host...
 
@@ -107,7 +110,12 @@ case $host_os in
         a8_host="linux"
         ;;
     mint)
-        a8_host="falcon"
+        if [[ "$a8_target" = "firebee" ]]; then
+            a8_host=firebee
+            a8_target=default
+        else
+            a8_host=falcon
+        fi
         AC_DEFINE(DIR_SEP_BACKSLASH,1,[Define to use back slash as directory separator.])
         AC_DEFINE(DEFAULT_CFG_NAME,"atari800.cfg",[Alternate config filename due to 8+3 fs limit.])
         AC_DEFINE(DOS_DRIVES,1,[Define to enable DOS style drives support.])
@@ -163,10 +171,17 @@ if [[ "$a8_target" = "android" ]]; then
 	AC_DEFINE(HAVE_GETTIMEOFDAY,1)
 fi
 if [[ "$a8_host" = "falcon" ]]; then
-	CFLAGS="-m68020-60 -O3 -fomit-frame-pointer -Wall"
+	CFLAGS="-m68020-60 -O2 -fomit-frame-pointer -Wall"
 	LDFLAGS="-m68020-60"
 fi
-
+if [[ "$a8_host" = "firebee" ]]; then
+	CFLAGS="-mcpu=5475 -O2 -fomit-frame-pointer -Wall"
+	LDFLAGS="-mcpu=5475"
+fi
+if [[ "$a8_target" = "libatari800" ]]; then
+    with_readline=no
+    WANT_EVENT_RECORDING=no
+fi
 
 dnl Check for programs...
 
@@ -177,8 +192,7 @@ AC_PROG_RANLIB
 AC_CHECK_TOOLS(WINDRES, [windres], :)
 
 AC_DEFUN([AM_PROG_AS], []) dnl dummy to make automake happy, since vasm is used instead
-dnl CCAS=vasm
-CCAS=/home/mikro/atari/compilers/vasm-2018-10-05/vasmm68k_mot
+CCAS=vasm
 CCASFLAGS="-quiet -devpac -opt-allbra -Faout"
 
 a8_use_sdl=no
@@ -283,6 +297,9 @@ if [[ "$a8_target" = "android" ]]; then
     LIBS="-lz $LIBS"
     AC_DEFINE(HAVE_LIBZ)
     dnl libm is automatically appended by the build system
+elif [[ "$a8_target" = "libatari800" ]]; then
+    AC_CHECK_LIB(m,cos,[LIBS="-lm $LIBS"])
+    AC_CHECK_FUNCS(setjmp)
 else
 	AC_CHECK_LIB(z,gzopen)
 	AC_CHECK_LIB(png,png_get_libpng_ver)
@@ -298,7 +315,7 @@ case "$a8_target" in
 dnl In DJGPP building with zlib fails with -ansi.
             CFLAGS="$CFLAGS -ansi"
         fi
-        CFLAGS="$CFLAGS -pedantic -Waggregate-return -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Winline"
+        CFLAGS="$CFLAGS -pedantic -Wmissing-declarations -Wmissing-prototypes -Wstrict-prototypes -Winline"
         if [[ "$a8_host" != "beos" ]]; then
 dnl BeOS has a real issue with redundant-decls
             CFLAGS="$CFLAGS -Wredundant-decls"
@@ -361,8 +378,11 @@ dnl BeOS has a real issue with redundant-decls
         A8_NEED_LIB(stdc++)
         A8_NEED_LIB(ws2_32)
         A8_NEED_LIB(gdi32)
-        CFLAGS="$CFLAGS -ansi -pedantic -Waggregate-return -Wmissing-declarations -Wmissing-prototypes -Wredundant-decls -Wstrict-prototypes -Winline"
+        CFLAGS="$CFLAGS -ansi -pedantic -Wmissing-declarations -Wmissing-prototypes -Wredundant-decls -Wstrict-prototypes -Winline"
         LDFLAGS="$LDFLAGS -mwindows"
+        ;;
+    libatari800)
+        AC_DEFINE(LIBATARI800,1,[Target: Atari800 as a library.])
         ;;
     x11*)
         AC_DEFINE(X11,1,[Target: Standard X11.])
@@ -413,6 +433,7 @@ AM_CONDITIONAL([CONFIGURE_TARGET_FALCON], test "$a8_target" = falcon)
 AM_CONDITIONAL([CONFIGURE_TARGET_PS2], test "$a8_target" = ps2)
 AM_CONDITIONAL([CONFIGURE_TARGET_RPI], test "$a8_target" = rpi)
 AM_CONDITIONAL([CONFIGURE_TARGET_WINDX], test "$a8_target" = windx)
+AM_CONDITIONAL([CONFIGURE_TARGET_LIBATARI800], test "$a8_target" = libatari800)
 AM_CONDITIONAL([CONFIGURE_TARGET_X11], test "$WANT_X11" = yes)
 
 
@@ -655,6 +676,7 @@ AM_CONDITIONAL(WITH_VIDEO_JAVANVM, test "$with_video" = javanvm)
 AM_CONDITIONAL(WITH_VIDEO_SDL, test "$with_video" = sdl)
 AM_CONDITIONAL(WITH_VIDEO_DOSVGA, test "$with_video" = dosvga)
 AM_CONDITIONAL(WITH_VIDEO_CURSES, test "$with_video" = curses -o "$with_video" = ncurses -o "$with_video" = pdcurses)
+AM_CONDITIONAL(WITH_VIDEO_LIBATARI800, test "$a8_target" = libatari800)
 AM_CONDITIONAL(WITH_VIDEO_NO, test "$with_video" = no)
 
 
@@ -675,7 +697,12 @@ AC_DEFUN([A8_OPTION],[
     fi
 ])
 
-if [[ "$a8_target" != "default" -o "$with_video" != no ]]; then
+if [[ "$a8_target" == "libatari800" ]]; then
+    WANT_NEW_CYCLE_EXACT=yes
+    WANT_VERY_SLOW=no
+    WANT_CRASH_MENU=no
+    WANT_CURSES_BASIC=no
+elif [[ "$a8_target" != "default" -o "$with_video" != no ]]; then
 
     case "$with_video" in
         *curses)
@@ -724,10 +751,15 @@ A8_OPTION(cyclesperopcode,no,
           CYCLES_PER_OPCODE,[Define to update ANTIC counter in each opcode's emulation.]
          )
 
-A8_OPTION(bufferedlog,no,
+if [[ "$a8_target" = libatari800 ]]; then
+    WANT_BUFFERED_LOG=yes
+    AC_DEFINE(BUFFERED_LOG,1,[Define to use buffered debug output.])
+else
+    A8_OPTION(bufferedlog,no,
           [Use buffered debug output (until the graphics mode switches back to text mode) (default=OFF)],
           BUFFERED_LOG,[Define to use buffered debug output.]
          )
+fi
 
 A8_OPTION(altirra_bios,yes,
       [Use Altirra OS to allow operation when real ROMs are not available (default=ON)],
@@ -736,51 +768,62 @@ A8_OPTION(altirra_bios,yes,
 
 AM_CONDITIONAL([WANT_EMUOS_ALTIRRA], test "$WANT_EMUOS_ALTIRRA" = "yes")
 
-A8_OPTION(monitorasm,yes,
-          [Provide an assembler in the monitor (default=ON)],
-          MONITOR_ASSEMBLER,[Define to activate assembler in monitor.]
-         )
+if [[ "$a8_target" = libatari800 ]]; then
+    WANT_MONITOR_ASSEMBLER=no
+    WANT_MONITOR_BREAK=no
+    WANT_MONITOR_BREAKPOINTS=no
+    WANT_MONITOR_HINTS=no
+    WANT_MONITOR_PROFILE=no
+    WANT_MONITOR_TRACE=no
+    WANT_MONITOR_ANSI=no
+    WANT_MONITOR_UTF8=no
+else
+    A8_OPTION(monitorasm,yes,
+              [Provide an assembler in the monitor (default=ON)],
+              MONITOR_ASSEMBLER,[Define to activate assembler in monitor.]
+             )
 
-A8_OPTION(monitorbreak,yes,
-          [Support code breakpoints and execution history (slower emulation) (default=ON)],
-          MONITOR_BREAK,[Define to activate code breakpoints and execution history.]
-         )
-if [[ "$WANT_MONITOR_BREAK" = "yes" ]]; then
-    CCASFLAGS="$CCASFLAGS -DMONITOR_BREAK"
+    A8_OPTION(monitorbreak,yes,
+              [Support code breakpoints and execution history (slower emulation) (default=ON)],
+              MONITOR_BREAK,[Define to activate code breakpoints and execution history.]
+             )
+    if [[ "$WANT_MONITOR_BREAK" = "yes" ]]; then
+        CCASFLAGS="$CCASFLAGS -DMONITOR_BREAK"
+    fi
+
+    A8_OPTION(monitorbreakpoints,no,
+              [Support user-defined breakpoints (default=OFF)],
+              MONITOR_BREAKPOINTS,[Define to activate user-defined breakpoints.]
+             )
+
+    A8_OPTION(monitorhints,yes,
+              [Provide hints in the disassembler (human-readable address labels) (default=ON)],
+              MONITOR_HINTS,[Define to activate hints in disassembler.]
+             )
+
+    A8_OPTION(monitorprofile,no,
+              [6502 opcode profiling (default=OFF)],
+              MONITOR_PROFILE,[Define to activate 6502 opcode profiling.]
+             )
+    if [[ "$WANT_MONITOR_PROFILE" = "yes" ]]; then
+        CCASFLAGS="$CCASFLAGS -DMONITOR_PROFILE"
+    fi
+
+    A8_OPTION(monitortrace,no,
+              [Support TRACE command in the monitor (default=OFF)],
+              MONITOR_TRACE,[Define to activate TRACE command in monitor.]
+             )
+
+    A8_OPTION(monitoransi,yes,
+              [Support ANSI terminal control (default=ON)],
+              MONITOR_ANSI,[Define to use ANSI terminal control in the monitor.]
+             )
+
+    A8_OPTION(monitorutf8,yes,
+              [Support UTF-8 for printing ATASCII characters in the monitor (default=ON)],
+              MONITOR_UTF8,[Define to use UTF-8 in the monitor.]
+             )
 fi
-
-A8_OPTION(monitorbreakpoints,no,
-          [Support user-defined breakpoints (default=OFF)],
-          MONITOR_BREAKPOINTS,[Define to activate user-defined breakpoints.]
-         )
-
-A8_OPTION(monitorhints,yes,
-          [Provide hints in the disassembler (human-readable address labels) (default=ON)],
-          MONITOR_HINTS,[Define to activate hints in disassembler.]
-         )
-
-A8_OPTION(monitorprofile,no,
-          [6502 opcode profiling (default=OFF)],
-          MONITOR_PROFILE,[Define to activate 6502 opcode profiling.]
-         )
-if [[ "$WANT_MONITOR_PROFILE" = "yes" ]]; then
-    CCASFLAGS="$CCASFLAGS -DMONITOR_PROFILE"
-fi
-
-A8_OPTION(monitortrace,no,
-          [Support TRACE command in the monitor (default=OFF)],
-          MONITOR_TRACE,[Define to activate TRACE command in monitor.]
-         )
-
-A8_OPTION(monitoransi,yes,
-          [Support ANSI terminal control (default=ON)],
-          MONITOR_ANSI,[Define to use ANSI terminal control in the monitor.]
-         )
-
-A8_OPTION(monitorutf8,yes,
-          [Support UTF-8 for printing ATASCII characters in the monitor (default=ON)],
-          MONITOR_UTF8,[Define to use UTF-8 in the monitor.]
-         )
 
 if [[ "$WANT_EVENT_RECORDING" != "no" ]]; then
 dnl we already checked for libz and added it to LIBS
@@ -820,7 +863,14 @@ AC_ARG_WITH([sound],
     ],
     [with_sound=check])
 
-if [[ "$a8_target" != "ps2" -a "$a8_target" != "android" ]]; then
+if [[ "$a8_target" = libatari800 ]]; then
+    if [[ "$with_sound" = check -o "$with_sound" = yes ]]; then
+        with_sound=libatari800
+        WANT_SOUND_THIN_API=yes
+    else
+        AC_MSG_ERROR([--with-audio option not needed to build libatari800!])
+    fi
+elif [[ "$a8_target" != "ps2" -a "$a8_target" != "android" ]]; then
     if [[ "$with_sound" != no ]]; then
         if [[ "$with_sound" = check -o "$with_sound" = yes -o "$with_sound" = javanvm ]]; then
             if [[ "$a8_host" = javanvm ]]; then
@@ -840,7 +890,7 @@ if [[ "$a8_target" != "ps2" -a "$a8_target" != "android" ]]; then
                 ])
         fi
         if [[ "$with_sound" = check -o "$with_sound" = yes -o "$with_sound" = falcon ]]; then
-            if [[ "$a8_host" = falcon ]]; then
+            if [[ "$a8_host" = falcon -o "$a8_host" = firebee ]]; then
                 with_sound=falcon
             elif [[ "$with_sound" = falcon ]]; then
                 AC_MSG_ERROR([--with-sound=falcon was given, but host system is not Falcon!])
@@ -908,6 +958,7 @@ AM_CONDITIONAL([WITH_SOUND_OSS], test "$with_sound" = oss)
 AM_CONDITIONAL([WITH_SOUND_SDL], test "$with_sound" = sdl)
 AM_CONDITIONAL([WITH_SOUND_WIN], test "$with_sound" = win)
 AM_CONDITIONAL([WITH_SOUND_DOSSB], test "$with_sound" = dossb)
+AM_CONDITIONAL([WITH_SOUND_LIBATARI800], test "$with_sound" = libatari800)
 AM_CONDITIONAL([A8_USE_SDL], test "$a8_use_sdl" = yes)
 
 dnl Set sound support options...
@@ -976,6 +1027,14 @@ if [[ "$with_sound" != no ]]; then
               [Emulate the Alien Group Voice Box (default=ON)],
               VOICEBOX,[Define to emulate the Alien Group Voice Box.]
              )
+
+    if [[ "$with_sound" == "libatari800" ]]; then
+        WANT_SOUND_CALLBACK=no
+        WANT_CONSOLE_SOUND=yes
+        WANT_SERIO_SOUND=yes
+        WANT_SYNCHRONIZED_SOUND=no
+        WANT_VOL_ONLY_SOUND="no"
+    fi
 else
     WANT_NONLINEAR_MIXING="no"
     WANT_SYNCHRONIZED_SOUND="no"
@@ -1001,6 +1060,15 @@ if [[ "$WANT_IDE" = "yes" ]]; then
     AC_FUNC_FSEEKO
 fi
 AM_CONDITIONAL([WANT_IDE], test "$WANT_IDE" = "yes")
+
+A8_OPTION(pokeyrec,$WANT_POKEYREC,
+          [Provide Pokey registers recording (default=ON)],
+          POKEYREC,[Define to add Pokey registers recording.]
+         )
+if [[ "$WANT_POKEYREC" == "yes" ]]; then
+    AC_SYS_LARGEFILE
+fi
+AM_CONDITIONAL([WANT_POKEYREC], test "$WANT_POKEYREC" = "yes")
 
 if [[ "$a8_use_sdl" = yes ]]; then
     A8_OPTION(onscreenkeyboard,no,
@@ -1127,8 +1195,8 @@ fi
 AM_CONDITIONAL([WANT_PAL_BLENDING], test "$WANT_PAL_BLENDING" = "yes")
 
 if [[ "$SUPPORTS_RDEVICE" = "yes" ]]; then
-    A8_OPTION(riodevice,no,
-              [Use the R: networking device (Linux/Unix/Win32) (default=OFF)],
+    A8_OPTION(riodevice,yes,
+              [Use the R: networking device (Linux/Unix/Win32) (default=ON)],
               R_IO_DEVICE,[Define to use R: device.]
              )
     if [[ "$WANT_R_IO_DEVICE" = "yes" ]]; then
@@ -1209,6 +1277,7 @@ echo "Using event recording?................: $WANT_EVENT_RECORDING"
 echo "Using MIO emulation?..................: $WANT_PBI_MIO"
 echo "Using Black Box emulation?............: $WANT_PBI_BB"
 echo "Using IDE emulation?..................: $WANT_IDE"
+echo "Using Pokey registers recording?......: $WANT_POKEYREC"
 echo "Interface for sound...................: $with_sound"
 if [[ "$with_sound" != no ]]; then
     echo "    Using nonlinear mixing?...........: $WANT_NONLINEAR_MIXING"
@@ -1274,7 +1343,7 @@ if [[ "$WANT_VERY_SLOW" = "yes" ]]; then
 		if [[ "$WANT_PAGED_ATTRIB" != "yes" ]]; then
 			echo "Have you tried --enable-pagedattrib ?"
 		fi
-		if [[ "$CYCLES_PER_OPCODE" != "yes" ]]; then
+		if [[ "$WANT_CYCLES_PER_OPCODE" != "yes" ]]; then
 			echo "Have you tried --enable-cyclesperopcode ?"
 		fi
 	fi
