@@ -43,25 +43,30 @@ All m68k versions are built with following switches:
 Then specifically:
 
 ATARI800.GTP (XBIOS audio, GEM/Videl video, cycle exact 6502/ANTIC)
-CFLAGS='-m68020-60' --target=falcon --enable-falconcpuasm
+--target=falcon --enable-falconcpuasm
 
 ATARIFST.GTP (XBIOS audio, GEM/Videl video, inexact 6502/ANTIC)
-CFLAGS='-m68020-60' --target=falcon --enable-falconcpuasm --disable-newcycleexact
+--target=falcon --enable-falconcpuasm --disable-newcycleexact
 (fastest version, you can gain a few % by adding --without-sound)
 
 ATARISDL.GTP (XBIOS audio, SDL video, cycle exact 6502/ANTIC)
 # point to -m68020-60 aware `sdl-config`
-PATH=$HOME/gnu-tools/m68000/m68k-atari-mint/bin:$PATH
-CFLAGS='-m68020-60' --target=default --enable-falconcpuasm
+PATH=$HOME/gnu-tools/m68k-atari-mint/bin/m68020-60:$PATH
+--target=default --enable-falconcpuasm
 
 ATARI_CF.GTP (ATARISDL.GTP for the FireBee, without asm emulation core)
 # point to -mcpu=5475 aware `sdl-config`
-PATH=$HOME/gnu-tools/m68000/m68k-atari-mint/bin:$PATH
-CFLAGS='-mcpu=5475' --target=default --enable-pagedattrib --enable-cyclesperopcode
+PATH=$HOME/gnu-tools/m68k-atari-mint/bin/m5475:$PATH
+--target=firebee --enable-pagedattrib --enable-cyclesperopcode
 
 Then for all versions:
 
 m68k-atari-mint-stack --fix=256k atari800
+m68k-atari-mint-flags -S atari800
+
+The `flags` command is needed to run properly on machines with memory protection
+enabled because atari800 hooks on the system keyboard vector and in case of the
+SDL version maybe also a few others.
 ===========================================================================
 
 Keyboard emulation works just like in other Atari800 flavors:

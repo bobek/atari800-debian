@@ -773,6 +773,8 @@ static void MakeBlankDisk(FILE *setFile)
 		fwrite(sector, 1, sizeof(sector), setFile);
 }
 
+int UI_show_hidden_files = FALSE;
+
 static void DiskManagement(void)
 {
 	static char drive_array[8][5] = { " D1:", " D2:", " D3:", " D4:", " D5:", " D6:", " D7:", " D8:" };
@@ -791,6 +793,7 @@ static void DiskManagement(void)
 		UI_MENU_ACTION(10, "Rotate Disks"),
 		UI_MENU_FILESEL(11, "Make Blank ATR Disk"),
 		UI_MENU_FILESEL_TIP(12, "Uncompress Disk Image", "Convert GZ or DCM to ATR"),
+		UI_MENU_CHECK(13, "Show hidden files/directories:"),
 		UI_MENU_END
 	};
 
@@ -819,6 +822,8 @@ static void DiskManagement(void)
 				break;
 			}
 		}
+
+		SetItemChecked(menu_array, 13, UI_show_hidden_files);
 
 		dsknum = UI_driver->fSelect("Disk Management", 0, dsknum, menu_array, &seltype);
 
@@ -953,6 +958,9 @@ static void DiskManagement(void)
 					break;
 				}
 			}
+			break;
+		case 13:
+			UI_show_hidden_files = !UI_show_hidden_files;
 			break;
 		default:
 			if (dsknum < 0)
@@ -1743,7 +1751,7 @@ static void ROMLocations(char const *title, UI_tMenuItem *menu_array)
 			else {
 				/* Use first non-empty ROM path as a starting filename for the dialog. */
 				int i;
-				for (i = 0; i < SYSROM_SIZE; ++i) {
+				for (i = 0; i < SYSROM_LOADABLE_SIZE; ++i) {
 					if (SYSROM_roms[i].filename[0] != '\0') {
 						strcpy(filename, SYSROM_roms[i].filename);
 						break;
@@ -1836,6 +1844,48 @@ static void ROMLocationsXEGame(void)
 	ROMLocations("XEGS Builtin Game ROM Locations", menu_array);
 }
 
+static SYSROM_t GetCurrentOS(void)
+{
+	SYSROM_t sysrom = { 0 };
+
+	int rom = SYSROM_os_versions[Atari800_machine_type];
+	if (rom == SYSROM_AUTO)
+		rom = SYSROM_AutoChooseOS(Atari800_machine_type, MEMORY_ram_size, Atari800_tv_mode);
+
+	if (rom != -1)
+		sysrom = SYSROM_roms[rom];
+
+	return sysrom;
+}
+
+static SYSROM_t GetCurrentBASIC(void)
+{
+	SYSROM_t sysrom = { 0 };
+
+	int rom = SYSROM_basic_version;
+	if (rom == SYSROM_AUTO)
+		rom = SYSROM_AutoChooseBASIC();
+
+	if (rom != -1)
+		sysrom = SYSROM_roms[rom];
+
+	return sysrom;
+}
+
+static SYSROM_t GetCurrentXEGame(void)
+{
+	SYSROM_t sysrom = { 0 };
+
+	int rom = SYSROM_xegame_version;
+	if (rom == SYSROM_AUTO)
+		rom = SYSROM_AutoChooseXEGame();
+
+	if (rom != -1)
+		sysrom = SYSROM_roms[rom];
+
+	return sysrom;
+}
+
 static void SystemROMSettings(void)
 {
 	static UI_tMenuItem menu_array[] = {
@@ -1849,6 +1899,8 @@ static void SystemROMSettings(void)
 	};
 
 	int option = 0;
+	int need_initialise = FALSE;
+	SYSROM_t old_sysrom, new_sysrom;
 
 	for (;;) {
 		int seltype;
@@ -1867,26 +1919,101 @@ static void SystemROMSettings(void)
 						break;
 					}
 				}
-				if (UI_driver->fGetDirectoryPath(rom_dir))
-					SYSROM_FindInDir(rom_dir, FALSE);
+				if (UI_driver->fGetDirectoryPath(rom_dir)) {
+					SYSROM_t old_basic, old_xegame;
+
+					old_sysrom = GetCurrentOS();
+					old_basic = GetCurrentBASIC();
+					old_xegame = GetCurrentXEGame();
+
+					if (SYSROM_FindInDir(rom_dir, FALSE)) {
+						new_sysrom = GetCurrentOS();
+
+						if (old_sysrom.data != new_sysrom.data) {
+							need_initialise = TRUE;
+							break;
+						}
+
+						if (Atari800_machine_type != Atari800_MACHINE_5200) {
+							new_sysrom = GetCurrentBASIC();
+
+							if (old_basic.data != new_sysrom.data) {
+								need_initialise = TRUE;
+								break;
+							}
+						}
+
+						if (Atari800_machine_type == Atari800_MACHINE_XLXE && Atari800_builtin_game) {
+							new_sysrom = GetCurrentXEGame();
+
+							if (old_xegame.data != new_sysrom.data) {
+								need_initialise = TRUE;
+								break;
+							}
+						}
+					}
+				}
 			}
 			break;
+
 		case 1:
-			ROMLocations800();
-			break;
 		case 2:
-			ROMLocationsXL();
-			break;
 		case 3:
-			ROMLocations5200();
+			old_sysrom = GetCurrentOS();
+
+			switch (option) {
+			case 1:
+				ROMLocations800();
+				break;
+			case 2:
+				ROMLocationsXL();
+				break;
+			case 3:
+				ROMLocations5200();
+				break;
+			}
+
+			new_sysrom = GetCurrentOS();
+
+			if (old_sysrom.data != new_sysrom.data)
+				need_initialise = TRUE;
 			break;
+
 		case 4:
-			ROMLocationsBASIC();
+			if (Atari800_machine_type != Atari800_MACHINE_5200) {
+				old_sysrom = GetCurrentBASIC();
+
+				ROMLocationsBASIC();
+
+				new_sysrom = GetCurrentBASIC();
+
+				if (old_sysrom.data != new_sysrom.data)
+					need_initialise = TRUE;
+			} else {
+				/* ignore BASIC changes on 5200 */
+				ROMLocationsBASIC();
+			}
 			break;
+
 		case 5:
-			ROMLocationsXEGame();
+			if (Atari800_machine_type == Atari800_MACHINE_XLXE && Atari800_builtin_game) {
+				old_sysrom = GetCurrentXEGame();
+
+				ROMLocationsXEGame();
+
+				new_sysrom = GetCurrentXEGame();
+
+				if (old_sysrom.data != new_sysrom.data)
+					need_initialise = TRUE;
+			} else {
+				/* ignore XEGame changes on non-XE */
+				ROMLocationsXEGame();
+			}
 			break;
+
 		default:
+			if (need_initialise)
+				Atari800_InitialiseMachine();
 			return;
 		}
 	}
@@ -4091,6 +4218,55 @@ static void HotKeyHelp(void)
 		"\n");
 }
 #endif
+
+int UI_Initialise(int *argc, char *argv[])
+{
+	int i;
+	int j;
+
+	for (i = j = 1; i < *argc; i++) {
+		int i_a = (i + 1 < *argc); /* is argument available? */
+		int a_m = FALSE; /* error, argument missing! */
+		int a_i = FALSE; /* error, argument invalid! */
+
+		if (strcmp(argv[i], "-atari_files") == 0) {
+			if (i_a) {
+				if (UI_n_atari_files_dir >= UI_MAX_DIRECTORIES)
+					Log_print("All ATARI_FILES_DIR slots used!");
+				else
+					Util_strlcpy(UI_atari_files_dir[UI_n_atari_files_dir++], argv[++i], FILENAME_MAX);
+			}
+			else a_m = TRUE;
+		}
+		else if (strcmp(argv[i], "-saved_files") == 0) {
+			if (i_a) {
+				if (UI_n_saved_files_dir >= UI_MAX_DIRECTORIES)
+					Log_print("All SAVED_FILES_DIR slots used!");
+				else
+					Util_strlcpy(UI_saved_files_dir[UI_n_saved_files_dir++], argv[++i], FILENAME_MAX);
+			}
+			else a_m = TRUE;
+		}
+		else {
+			if (strcmp(argv[i], "-help") == 0) {
+				Log_print("\t-atari_files <path>  Set default path for Atari executables");
+				Log_print("\t-saved_files <path>  Set default path for saved files");
+			}
+			argv[j++] = argv[i];
+		}
+
+		if (a_m) {
+			Log_print("Missing argument for '%s'", argv[i]);
+			return FALSE;
+		} else if (a_i) {
+			Log_print("Invalid argument for '%s'", argv[--i]);
+			return FALSE;
+		}
+	}
+	*argc = j;
+
+	return TRUE;
+}
 
 void UI_Run(void)
 {
