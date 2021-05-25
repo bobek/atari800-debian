@@ -1,3 +1,9 @@
+atari800 (4.2.0-1) unstable; urgency=medium
+
+  * New upstream version 4.2.0
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Tue, 25 May 2021 08:54:49 +0200
+
 atari800 (4.1.0-3) unstable; urgency=medium
 
   * Add icon into menu (Closes: Ubuntu#1575369)
