@@ -65,7 +65,6 @@ binary-common:
 				dh_testdir
 				dh_testroot
 				dh_installdocs
-				dh_installmenu
 				dh_installcron
 				dh_installman
 				dh_installinfo
