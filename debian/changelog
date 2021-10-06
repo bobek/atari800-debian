@@ -1,3 +1,10 @@
+atari800 (4.2.0-4) UNRELEASED; urgency=medium
+
+  * Switching to libeditreadline-dev to resolve licensing issue 
+    (Closes: #977654)
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Wed, 06 Oct 2021 20:55:50 +0200
+
 atari800 (4.2.0-3) unstable; urgency=medium
 
   * Fine-tune of the desktop entry.
