@@ -6,4 +6,5 @@ Exec=atari800
 Icon=atari800
 Terminal=false
 Type=Application
-Categories=System;Emulator;
+Categories=Game
+Keywords=atari800;Atari;Emulator;
