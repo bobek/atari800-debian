@@ -4,6 +4,8 @@ This package was put together by Dale Scheetz <dwarf@polaris.net>, using
 sources from:
 	http://atari800.sourceforge.net/
 
+While atari800 is licensed under the GPLv2 it needs access to proprietary ROMs
+to be really useful. For this reason, it is placed in the contrib archive area.
 
 Copyright:
 
