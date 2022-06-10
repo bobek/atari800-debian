@@ -80,9 +80,11 @@
 #endif /* BIT3 */
 #ifdef SOUND
 #include "pokeysnd.h"
-#include "sndsave.h"
 #include "sound.h"
 #endif /* SOUND */
+#if defined(SOUND) || defined(VIDEO_RECORDING)
+#include "file_export.h"
+#endif /* defined(SOUND) || defined(VIDEO_RECORDING) */
 #ifdef DIRECTX
 #include "win32\main.h"
 #include "win32\joystick.h"
@@ -1007,98 +1009,32 @@ static void DiskManagement(void)
 
 int UI_SelectCartType(int k)
 {
-	static UI_tMenuItem menu_array[] = {
-		UI_MENU_ACTION(CARTRIDGE_STD_8, CARTRIDGE_STD_8_DESC),
-		UI_MENU_ACTION(CARTRIDGE_STD_16, CARTRIDGE_STD_16_DESC),
-		UI_MENU_ACTION(CARTRIDGE_OSS_034M_16, CARTRIDGE_OSS_034M_16_DESC),
-		UI_MENU_ACTION(CARTRIDGE_5200_32, CARTRIDGE_5200_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_DB_32, CARTRIDGE_DB_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_5200_EE_16, CARTRIDGE_5200_EE_16_DESC),
-		UI_MENU_ACTION(CARTRIDGE_5200_40, CARTRIDGE_5200_40_DESC),
-		UI_MENU_ACTION(CARTRIDGE_WILL_64, CARTRIDGE_WILL_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_EXP_64, CARTRIDGE_EXP_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_DIAMOND_64, CARTRIDGE_DIAMOND_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SDX_64, CARTRIDGE_SDX_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_XEGS_32, CARTRIDGE_XEGS_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_XEGS_07_64, CARTRIDGE_XEGS_07_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_XEGS_128, CARTRIDGE_XEGS_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_OSS_M091_16, CARTRIDGE_OSS_M091_16_DESC),
-		UI_MENU_ACTION(CARTRIDGE_5200_NS_16, CARTRIDGE_5200_NS_16_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ATRAX_DEC_128, CARTRIDGE_ATRAX_DEC_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_BBSB_40, CARTRIDGE_BBSB_40_DESC),
-		UI_MENU_ACTION(CARTRIDGE_5200_8, CARTRIDGE_5200_8_DESC),
-		UI_MENU_ACTION(CARTRIDGE_5200_4, CARTRIDGE_5200_4_DESC),
-		UI_MENU_ACTION(CARTRIDGE_RIGHT_8, CARTRIDGE_RIGHT_8_DESC),
-		UI_MENU_ACTION(CARTRIDGE_WILL_32, CARTRIDGE_WILL_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_XEGS_256, CARTRIDGE_XEGS_256_DESC),
-		UI_MENU_ACTION(CARTRIDGE_XEGS_512, CARTRIDGE_XEGS_512_DESC),
-		UI_MENU_ACTION(CARTRIDGE_XEGS_1024, CARTRIDGE_XEGS_1024_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGA_16, CARTRIDGE_MEGA_16_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGA_32, CARTRIDGE_MEGA_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGA_64, CARTRIDGE_MEGA_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGA_128, CARTRIDGE_MEGA_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGA_256, CARTRIDGE_MEGA_256_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGA_512, CARTRIDGE_MEGA_512_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGA_1024, CARTRIDGE_MEGA_1024_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SWXEGS_32, CARTRIDGE_SWXEGS_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SWXEGS_64, CARTRIDGE_SWXEGS_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SWXEGS_128, CARTRIDGE_SWXEGS_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SWXEGS_256, CARTRIDGE_SWXEGS_256_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SWXEGS_512, CARTRIDGE_SWXEGS_512_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SWXEGS_1024, CARTRIDGE_SWXEGS_1024_DESC),
-		UI_MENU_ACTION(CARTRIDGE_PHOENIX_8, CARTRIDGE_PHOENIX_8_DESC),
-		UI_MENU_ACTION(CARTRIDGE_BLIZZARD_16, CARTRIDGE_BLIZZARD_16_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ATMAX_128, CARTRIDGE_ATMAX_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ATMAX_1024, CARTRIDGE_ATMAX_1024_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SDX_128, CARTRIDGE_SDX_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_OSS_8, CARTRIDGE_OSS_8_DESC),
-		UI_MENU_ACTION(CARTRIDGE_OSS_043M_16, CARTRIDGE_OSS_043M_16_DESC),
-		UI_MENU_ACTION(CARTRIDGE_BLIZZARD_4, CARTRIDGE_BLIZZARD_4_DESC),
-		UI_MENU_ACTION(CARTRIDGE_AST_32, CARTRIDGE_AST_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ATRAX_SDX_64, CARTRIDGE_ATRAX_SDX_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ATRAX_SDX_128, CARTRIDGE_ATRAX_SDX_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_TURBOSOFT_64, CARTRIDGE_TURBOSOFT_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_TURBOSOFT_128, CARTRIDGE_TURBOSOFT_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ULTRACART_32, CARTRIDGE_ULTRACART_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_LOW_BANK_8, CARTRIDGE_LOW_BANK_8_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SIC_128, CARTRIDGE_SIC_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SIC_256, CARTRIDGE_SIC_256_DESC),
-		UI_MENU_ACTION(CARTRIDGE_SIC_512, CARTRIDGE_SIC_512_DESC),
-		UI_MENU_ACTION(CARTRIDGE_STD_2, CARTRIDGE_STD_2_DESC),
-		UI_MENU_ACTION(CARTRIDGE_STD_4, CARTRIDGE_STD_4_DESC),
-		UI_MENU_ACTION(CARTRIDGE_RIGHT_4, CARTRIDGE_RIGHT_4_DESC),
-		UI_MENU_ACTION(CARTRIDGE_BLIZZARD_32, CARTRIDGE_BLIZZARD_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGAMAX_2048, CARTRIDGE_MEGAMAX_2048_DESC),
-		UI_MENU_ACTION(CARTRIDGE_THECART_128M, CARTRIDGE_THECART_128M_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGA_4096, CARTRIDGE_MEGA_4096_DESC),
-		UI_MENU_ACTION(CARTRIDGE_MEGA_2048, CARTRIDGE_MEGA_2048_DESC),
-		UI_MENU_ACTION(CARTRIDGE_THECART_32M, CARTRIDGE_THECART_32M_DESC),
-		UI_MENU_ACTION(CARTRIDGE_THECART_64M, CARTRIDGE_THECART_64M_DESC),
-		UI_MENU_ACTION(CARTRIDGE_XEGS_8F_64, CARTRIDGE_XEGS_8F_64_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ATRAX_128, CARTRIDGE_ATRAX_128_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ADAWLIAH_32, CARTRIDGE_ADAWLIAH_32_DESC),
-		UI_MENU_ACTION(CARTRIDGE_ADAWLIAH_64, CARTRIDGE_ADAWLIAH_64_DESC),
-		UI_MENU_END
-	};
-
-	int i;
+	UI_tMenuItem menu_array[CARTRIDGE_TYPE_COUNT] = { 0 };
+	int cart_entry;
+	int menu_entry = 0;
 	int option = 0;
 
 	UI_driver->fInit();
 
-	for (i = 1; i <= CARTRIDGE_LAST_SUPPORTED; i++)
-		if (CARTRIDGE_kb[i] == k) {
-			if (option == 0)
-				option = i;
-			menu_array[i - 1].flags = UI_ITEM_ACTION;
-		}
-		else
-			menu_array[i - 1].flags = UI_ITEM_HIDDEN;
-
-	if (option == 0)
+	for (cart_entry = 1; cart_entry < CARTRIDGE_TYPE_COUNT;
+	     cart_entry++) {
+		if (CARTRIDGES[cart_entry].kb == k) {
+			menu_array[menu_entry].flags = UI_ITEM_ACTION;
+			menu_array[menu_entry].retval = cart_entry;
+			menu_array[menu_entry].item =
+				CARTRIDGES[cart_entry].description;
+			menu_entry++;
+	    	}
+	}
+		
+	if (menu_entry == 0)
 		return CARTRIDGE_NONE;
 
-	option = UI_driver->fSelect("Select Cartridge Type", 0, option, menu_array, NULL);
+	/* Terminate menu_array, but do it by hand */
+	menu_array[menu_entry].flags = UI_ITEM_END;
+
+	option = UI_driver->fSelect("Select Cartridge Type", 0, option,
+		menu_array, NULL);
 	if (option > 0)
 		return option;
 
@@ -1338,34 +1274,72 @@ static void CartManagement(void)
 #if defined(SOUND) && !defined(DREAMCAST)
 static void SoundRecording(void)
 {
-	if (!SndSave_IsSoundFileOpen()) {
-		int no = 0;
-		do {
-			char buffer[32];
-			snprintf(buffer, sizeof(buffer), "atari%03d.wav", no);
-			if (!Util_fileexists(buffer)) {
-				/* file does not exist - we can create it */
-				FilenameMessage(SndSave_OpenSoundFile(buffer)
-					? "Recording sound to file \"%s\""
-					: "Can't write to file \"%s\"", buffer);
-				return;
+	if (!Sound_enabled) {
+		UI_driver->fMessage("Can't record. Sound not enabled.", 1);
+		return;
+	}
+	if (!File_Export_IsRecording()) {
+		char buffer[FILENAME_MAX];
+		if (File_Export_GetNextSoundFile(buffer, sizeof(buffer))) {
+			/* file does not exist - we can create it */
+			if (File_Export_StartRecording(buffer)) {
+				FilenameMessage("Recording sound to file \"%s\"", buffer);
 			}
-		} while (++no < 1000);
-		UI_driver->fMessage("All atariXXX.wav files exist!", 1);
+			else {
+				UI_driver->fMessage(FILE_EXPORT_error_message, 1);
+			}
+			return;
+		}
+		UI_driver->fMessage("All sound files exist!", 1);
 	}
 	else {
-		SndSave_CloseSoundFile();
+		File_Export_StopRecording();
 		UI_driver->fMessage("Recording stopped", 1);
 	}
 }
 #endif /* defined(SOUND) && !defined(DREAMCAST) */
 
+#ifdef VIDEO_RECORDING
+static void VideoRecording(void)
+{
+	if (!File_Export_IsRecording()) {
+		char buffer[FILENAME_MAX];
+		if (File_Export_GetNextVideoFile(buffer, sizeof(buffer))) {
+			/* file does not exist - we can create it */
+			if (File_Export_StartRecording(buffer)) {
+				FilenameMessage("Recording video to file \"%s\"", buffer);
+			}
+			else {
+				UI_driver->fMessage(FILE_EXPORT_error_message, 1);
+			}
+			return;
+		}
+		UI_driver->fMessage("All video files exist!", 1);
+	}
+	else {
+		File_Export_StopRecording();
+		UI_driver->fMessage("Recording stopped", 1);
+	}
+}
+#endif /* VIDEO_RECORDING */
+
 static int AutostartFile(void)
 {
 	static char filename[FILENAME_MAX];
 	if (UI_driver->fGetLoadFilename(filename, UI_atari_files_dir, UI_n_atari_files_dir)) {
-		if (AFILE_OpenFile(filename, TRUE, 1, FALSE))
+		int file_type = AFILE_OpenFile(filename, TRUE, 1, FALSE);
+		if (file_type != 0) {
+			int rom_kb;
+			if ((file_type & 0xff) == AFILE_ROM
+			    && (rom_kb = (file_type & ~0xff) >> 8) != 0) {
+				int cart_type = UI_SelectCartType(rom_kb);
+				if (cart_type == CARTRIDGE_NONE)
+					/* User chose nothing - go back to parent menu. */
+					return FALSE;
+				CARTRIDGE_SetTypeAutoReboot(&CARTRIDGE_main, cart_type);
+			}
 			return TRUE;
+		}
 		CantLoad(filename);
 	}
 	return FALSE;
@@ -4282,6 +4256,9 @@ void UI_Run(void)
 		UI_MENU_ACTION_ACCEL(UI_MENU_SOUND_RECORDING, "Sound Recording Start/Stop", "Alt+W"),
 #endif
 #endif
+#ifdef VIDEO_RECORDING
+		UI_MENU_ACTION_ACCEL(UI_MENU_VIDEO_RECORDING, "Video Recording Start/Stop", "Alt+V"),
+#endif
 #ifndef CURSES_BASIC
 		UI_MENU_SUBMENU(UI_MENU_DISPLAY, "Display Settings"),
 #endif
@@ -4404,6 +4381,11 @@ void UI_Run(void)
 			SoundRecording();
 			break;
 #endif
+#endif
+#ifdef VIDEO_RECORDING
+		case UI_MENU_VIDEO_RECORDING:
+			VideoRecording();
+			break;
 #endif
 		case UI_MENU_SAVESTATE:
 			SaveState();

@@ -88,6 +88,7 @@ PRE_UNINSTALL = :
 POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
+@CONFIGURE_TARGET_ANDROID_FALSE@am__append_1 = tools
 subdir = .
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/sdl.m4 \
@@ -186,7 +187,7 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 CSCOPE = cscope
-DIST_SUBDIRS = $(SUBDIRS)
+DIST_SUBDIRS = DOC src tools
 am__DIST_COMMON = $(srcdir)/Makefile.in \
 	$(top_srcdir)/src/android/jni/Android.mk.in COPYING compile \
 	config.guess config.sub install-sh missing
@@ -270,6 +271,7 @@ LTLIBOBJS = @LTLIBOBJS@
 MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MKDIR_P = @MKDIR_P@
+NDK_BUILD = @NDK_BUILD@
 OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
@@ -343,7 +345,7 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 ACLOCAL_AMFLAGS = -I m4
 AUTOMAKE_OPTIONS = foreign
-SUBDIRS = DOC src
+SUBDIRS = DOC src $(am__append_1)
 doc_DATA = COPYING README.TXT
 EXTRA_DIST = $(doc_DATA) act data debian util
 all: all-recursive

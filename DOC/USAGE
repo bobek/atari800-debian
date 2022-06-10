@@ -124,6 +124,8 @@ Command line options
 -xe                   Emulate Atari 130XE
 -320xe                Emulate Atari 320XE (Compy Shop)
 -rambo                Emulate Atari 320XE (Rambo)
+-576xe                Emulate Atari 576XE
+-1088xe               Emulate Atari 1088XE
 -xegs                 Emulate Atari XEGS
 -5200                 Emulate Atari 5200
 
@@ -143,12 +145,12 @@ Command line options
 -basic                Turn on Atari BASIC ROM
 
 -cart <filename>      Insert cartridge (CART or raw format)
--cart-type <0..70>    Select type of cartridge inserted with -cart. 0 means
+-cart-type <0..75>    Select type of cartridge inserted with -cart. 0 means
                       no cartridge, and other values indicate a specific
                       cartridge type as in cart.txt.
 -cart2 <filename>     Insert second cartridge (CART or raw format)
                       Only if first cartridge is SpartaDOS X (64 or 128)
--cart2-type <0..70>   Similar to -cart-type. Select type of cartridge inserted
+-cart2-type <0..75>   Similar to -cart-type. Select type of cartridge inserted
                       with -cart2.
 -cart-autoreboot      Automatically reboot after cartridge inserting/removing
                       (doesn't affect the piggyback cartridge)
@@ -434,6 +436,7 @@ Alt+T                Tape management
 Alt+Y                Select system
 Alt+O                Sound settings
 Alt+W                Sound recording start/stop
+Alt+V                Video recording start/stop
 Alt+S                Save state file
 Alt+L                Load state file
 Alt+A                About the emulator

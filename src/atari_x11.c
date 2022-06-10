@@ -196,7 +196,7 @@ static UBYTE *image_data = NULL;
 static int modified;
 
 static int keypad_mode = -1;	/* Joystick */
-static int keypad_trig = 1;		/* Keypad Trigger Position */
+static int keypad_trig = 1;	/* Keypad Trigger Position */
 static int keypad_stick = 0x0f;	/* Keypad Joystick Position */
 
 static int xmouse_mode = -1;		/* Joystick, Paddle and Light Pen */
@@ -806,7 +806,7 @@ static int insert_rom(const char *filename)
 		return TRUE;
 	}
 	/* TODO: select cartridge type */
-	for (i = 1; i < CARTRIDGE_LAST_SUPPORTED; i++) {
+	for (i = 1; i < CARTRIDGE_TYPE_COUNT; i++) {
 		if (CARTRIDGE_kb[i] == r) {
 			CARTRIDGE_main.type = i;
 			Atari800_Coldstart();
@@ -2620,6 +2620,9 @@ void PLATFORM_DisplayScreen(void)
 int PLATFORM_Keyboard(void)
 {
 	static int keycode = AKEY_NONE;
+
+	if (keycode == AKEY_SCREENSHOT_INTERLACE || keycode == AKEY_SCREENSHOT)
+		keycode = AKEY_NONE;   /* don't auto-repeat the 'screenshot' key */
 
 #ifdef XVIEW
 	notify_dispatch();
