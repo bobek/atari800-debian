@@ -9,6 +9,9 @@
 /* Target: Android */
 #undef ANDROID
 
+/* Supports mp3 audio */
+#undef AUDIO_CODEC_MP3
+
 /* Target: standard I/O. */
 #undef BASIC
 
@@ -142,7 +145,7 @@
 /* Define to 1 if you have the `gem' library (-lgem). */
 #undef HAVE_LIBGEM
 
-/* Define to 1 if you have the `png' library (-lpng). */
+/* Supports PNG image compression library. */
 #undef HAVE_LIBPNG
 
 /* Define to 1 if you have the `z' library (-lz). */
@@ -392,6 +395,9 @@
 /* Target: X11 with Motif. */
 #undef MOTIF
 
+/* Define to provide multimedia recording capability. */
+#undef MULTIMEDIA
+
 /* Define to allow color changes inside a scanline. */
 #undef NEW_CYCLE_EXACT
 
@@ -556,6 +562,18 @@
 
 /* Define to use very slow computer support (faster -refresh). */
 #undef VERY_SLOW
+
+/* Define for targets too slow to run without OpenGL video acceleration */
+#undef VIDEO_ACCEL_ON_BY_DEFAULT
+
+/* Define to enable support for PNG video codec. */
+#undef VIDEO_CODEC_PNG
+
+/* Define to enable support for ZMBV video codec. */
+#undef VIDEO_CODEC_ZMBV
+
+/* Define to enable support for AVI video/audio recording. */
+#undef VIDEO_RECORDING
 
 /* Define to emulate the Alien Group Voice Box. */
 #undef VOICEBOX

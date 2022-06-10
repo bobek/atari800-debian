@@ -77,7 +77,7 @@
 #endif /* ASAP */
 
 #ifdef LIBATARI800
-#include "libatari800/main.h"
+#include "libatari800/cpu_crash.h"
 #endif
 
 /* For Atari Basic loader */
@@ -846,7 +846,8 @@ void CPU_GO(int limit)
 	OPCODE(00)				/* BRK */
 #ifdef LIBATARI800
 #ifdef HAVE_SETJMP
-		longjmp(libatari800_cpu_crash, LIBATARI800_BRK_INSTRUCTION);
+		if (!libatari800_continue_on_brk)
+			longjmp(libatari800_cpu_crash, LIBATARI800_BRK_INSTRUCTION);
 #endif /* HAVE_SETJMP */
 #else /* LIBATARI800 */
 #ifdef MONITOR_BREAK
@@ -2419,8 +2420,10 @@ void CPU_GO(int limit)
 
 #else /* FALCON_CPUASM */
 
-	extern void CPU_GO_m68k(void);
-	CPU_GO_m68k();
+	{
+		extern void CPU_GO_m68k(void);
+		CPU_GO_m68k();
+	}
 
 #endif /* FALCON_CPUASM */
 	UPDATE_GLOBAL_REGS;

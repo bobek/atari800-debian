@@ -31,7 +31,7 @@
 #else
 #include "atari.h"
 #ifndef __PLUS
-#include "sndsave.h"
+#include "file_export.h"
 #else
 #include "sound_win.h"
 #endif
@@ -165,7 +165,13 @@ static int mz_quality = 0;		/* default quality for mzpokeysnd */
 int mz_clear_regs = 0;
 #endif
 
+#ifndef __MINT__
 int POKEYSND_enable_new_pokey = TRUE;
+#else
+/* too slow on Falcon */
+int POKEYSND_enable_new_pokey = FALSE;
+#endif
+
 int POKEYSND_bienias_fix = TRUE;  /* when TRUE, high frequencies get emulated: better sound but slower */
 #if defined(__PLUS) && !defined(_WX_)
 #define BIENIAS_FIX (g_Sound.nBieniasFix)
@@ -289,7 +295,7 @@ static void init_vol_only(void)
 
 int POKEYSND_DoInit(void)
 {
-	SndSave_CloseSoundFile();
+	File_Export_StopRecording();
 
 #ifdef VOL_ONLY_SOUND
 	init_vol_only();
@@ -356,7 +362,7 @@ void POKEYSND_Process(void *sndbuffer, int sndn)
 	VOTRAXSND_Process(sndbuffer,sndn);
 #endif
 #if !defined(__PLUS) && !defined(ASAP)
-	SndSave_WriteToSoundFile((const unsigned char *)sndbuffer, sndn);
+	File_Export_WriteAudio((const unsigned char *)sndbuffer, sndn);
 #endif
 }
 
@@ -378,7 +384,7 @@ int POKEYSND_UpdateProcessBuffer(void)
 	VOTRAXSND_Process(POKEYSND_process_buffer, sndn);
 #endif
 #if !defined(__PLUS) && !defined(ASAP)
-	SndSave_WriteToSoundFile((const unsigned char *)POKEYSND_process_buffer, sndn);
+	File_Export_WriteAudio((const unsigned char *)POKEYSND_process_buffer, sndn);
 #endif
 	return sndn;
 }

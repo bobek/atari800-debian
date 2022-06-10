@@ -12,17 +12,19 @@ noinst_PROGRAMS =
 
 man1dir = $(mandir)/man1
 
-AM_CPPFLAGS = -I.
-
 SUFFIXES = .c .cpp .s .o .h .asm
 
 doc_DATA = 
+
+atari800_CPPFLAGS =
 
 if CONFIGURE_TARGET_LIBATARI800
 lib_LIBRARIES = libatari800.a
 include_HEADERS = libatari800/libatari800.h
 libatari800_a_SOURCES = \
 	libatari800/libatari800.h \
+	libatari800/api.c \
+	libatari800/cpu_crash.h \
 	libatari800/main.c libatari800/main.h \
 	libatari800/init.c libatari800/init.h \
 	libatari800/exit.c \
@@ -61,6 +63,7 @@ atari800_SOURCES = \
 	atari.c atari.h \
 	binload.c binload.h \
 	cartridge.c cartridge.h \
+	cartridge_info.c cartridge_info.h \
 	cassette.c cassette.h \
 	compfile.c compfile.h \
 	cfg.c cfg.h \
@@ -86,7 +89,8 @@ atari800_LDADD =
 if A8_USE_SDL
 atari800_SOURCES += sdl/init.c sdl/init.h
 if CONFIGURE_HOST_WIN
-atari800_SOURCES += win32/SDL_win32_main.c
+atari800_SOURCES += sdl/SDL_win32_main.c
+atari800_CPPFLAGS += -Dmain=SDL_main
 endif
 endif
 
@@ -94,8 +98,7 @@ if WITH_SOUND
 atari800_SOURCES += \
 	pokeysnd.c pokeysnd.h \
 	mzpokeysnd.c mzpokeysnd.h \
-	remez.c remez.h \
-	sndsave.c sndsave.h
+	remez.c remez.h
 endif
 if WITH_SOUND_SDL
 atari800_SOURCES += sound.c sound.h sdl/sound.c
@@ -112,13 +115,43 @@ endif
 if WITH_SOUND_OSS
 atari800_SOURCES += sound.c sound_oss.c
 endif
+if WITH_SOUND_WIN
+atari800_SOURCES += win32/sound.c
+endif
 if WITH_SOUND_LIBATARI800
 atari800_SOURCES += sound.c libatari800/sound.c libatari800/sound.h
 endif
 if WANT_POKEYREC
 atari800_SOURCES += pokeyrec.c pokeyrec.h
 endif
-
+if WITH_FILE_EXPORT
+atari800_SOURCES += file_export.c file_export.h
+if WITH_MULTIMEDIA
+atari800_SOURCES += codecs/container.c codecs/container.h
+if WITH_SOUND
+atari800_SOURCES += codecs/container_wav.c codecs/container_wav.h \
+	codecs/audio.c codecs/audio.h \
+	codecs/audio_pcm.c codecs/audio_pcm.h \
+	codecs/audio_adpcm.c codecs/audio_adpcm.h \
+	codecs/audio_mulaw.c codecs/audio_mulaw.h
+if WITH_AUDIO_CODEC_MP3
+atari800_SOURCES += codecs/audio_mp3.c codecs/audio_mp3.h \
+	codecs/container_mp3.c codecs/container_mp3.h
+endif
+endif
+if WITH_VIDEO_RECORDING
+atari800_SOURCES += codecs/container_avi.c codecs/container_avi.h \
+	codecs/video.c codecs/video.h \
+	codecs/video_mrle.c codecs/video_mrle.h
+if WITH_VIDEO_CODEC_PNG
+atari800_SOURCES += codecs/video_mpng.c codecs/video_mpng.h
+endif
+if WITH_VIDEO_CODEC_ZMBV
+atari800_SOURCES += codecs/video_zmbv.c codecs/video_zmbv.h
+endif
+endif
+endif
+endif
 
 
 if CONFIGURE_TARGET_FALCON
@@ -148,9 +181,6 @@ libwin32_a_SOURCES = \
 	win32/main.c win32/main.h win32/main_menu.h \
 	win32/keyboard.c win32/keyboard.h \
 	win32/joystick.c win32/joystick.h
-if WITH_SOUND_WIN
-libwin32_a_SOURCES += win32/sound.c
-endif
 atari800_LDADD += libwin32.a win32/atari.ro
 # A special rule for win32 to not compile with -ansi -pedantic
 libwin32_a_CFLAGS = $(CFLAGS_NOANSI)
@@ -199,7 +229,12 @@ atari800_SOURCES += \
 	colours_ntsc.c colours_ntsc.h \
 	colours_pal.c colours_pal.h \
 	colours_external.c colours_external.h \
-	screen.c screen.h
+	screen.c screen.h \
+	codecs/image.c codecs/image.h \
+	codecs/image_pcx.c codecs/image_pcx.h
+if WITH_LIBPNG
+atari800_SOURCES += codecs/image_png.c codecs/image_png.h
+endif
 if WANT_NEW_CYCLE_EXACT
 atari800_SOURCES += cycle_map.c cycle_map.h
 endif
@@ -270,7 +305,7 @@ endif
 
 # A special rule for SDL_win32_main.c to suppress warnings since this file is
 # from SDL and should not have to be modified
-win32/SDL_win32_main.o: win32/SDL_win32_main.c
+sdl/SDL_win32_main.o: sdl/SDL_win32_main.c
 	$(CC) -c -o $@ $(AM_CPPFLAGS) $(CFLAGS) $(DEFAULT_INCLUDES) $(CPPFLAGS) $(DEFS) -Wno-missing-declarations -Wno-missing-prototypes $<
 
 ide.o: ide.c ide.h ide_internal.h
@@ -314,7 +349,7 @@ $(TARGET_BASE_NAME).jar: $(TARGET_BASE_NAME).class $(TARGET_BASE_NAME)$(RUNTIME)
 
 # Allow parallel execution in sub-make with '+'
 android:
-	+ ndk-build -C android
+	+ $(NDK_BUILD) -C android
 	ant -f android/build.xml debug
 .PHONY: android
 
