@@ -1,3 +1,9 @@
+atari800 (5.0.0-1) unstable; urgency=medium
+
+  * New upstream release 5.0.0 -- released at Atariada.cz
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Fri, 10 Jun 2022 19:14:03 +0200
+
 atari800 (4.2.0-4) unstable; urgency=medium
 
   * Switching to libeditreadline-dev to resolve licensing issue 
