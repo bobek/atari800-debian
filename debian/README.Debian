@@ -10,7 +10,8 @@ legal. You must have the ROMs to use this emulator.
 
 To add other software, you'll have to find your own disk images (some are
 in the xf25.zip mentioned above). You need to change atari800.cfg to point
-to the appropriate directories.
+to the appropriate directories. It will be created in ~/.atari800.cfg on
+the first start of the emulator.
 
 Running the Emulator
 --------------------
