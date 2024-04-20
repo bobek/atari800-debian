@@ -1,3 +1,9 @@
+atari800 (5.2.0-2) unstable; urgency=medium
+
+  * [b80f407] Remove the config from the package
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Sat, 20 Apr 2024 20:08:40 +0200
+
 atari800 (5.2.0-1) unstable; urgency=medium
 
   * [ecc83a5] Use configuration from the source
