@@ -44,6 +44,7 @@
 #include "cpu.h"
 #include "gtia.h"
 #include "memory.h"
+#include "cartridge.h"
 #include "monitor.h"
 #include "pia.h"
 #include "pokey.h"
@@ -1261,7 +1262,7 @@ static void monitor_breakpoints(void)
 						printf("X%s%02X", op, MONITOR_breakpoint_table[i].value);
 						break;
 					case MONITOR_BREAKPOINT_Y >> 3:
-						printf("A%s%02X", op, MONITOR_breakpoint_table[i].value);
+						printf("Y%s%02X", op, MONITOR_breakpoint_table[i].value);
 						break;
 					case MONITOR_BREAKPOINT_S >> 3:
 						printf("S%s%02X", op, MONITOR_breakpoint_table[i].value);
@@ -2166,17 +2167,74 @@ static void monitor_set_hardware(void)
 static void monitor_read_from_file(UWORD *addr)
 {
 	const char *filename;
+	int xex = FALSE;
+	/* Peek at the next token without retrieving it... */
+	if(Util_strnicmp(token_ptr, "XEX ", 4) == 0) {
+		xex = TRUE;
+		/* we got the magic keyword, toss the token */
+		(void)get_token();
+	}
+
 	filename = get_token();
+
 	if (filename != NULL) {
 		UWORD nbytes;
-		if (get_hex2(addr, &nbytes) && *addr + nbytes <= 0x10000) {
+		if (xex) /* load xex file; no init nor run performed */
+		{
 			FILE *f = fopen(filename, "rb");
 			if (f == NULL)
 				perror(filename);
 			else {
-				if (fread(&MEMORY_mem[*addr], 1, nbytes, f) == 0)
-					perror(filename);
+				while (42) {
+					UWORD fromaddr;
+					UWORD toaddr;
+					int byte;
+
+					do {
+						byte=fgetc(f);
+						if (byte==EOF) { break; }
+						fromaddr=byte&0xff;
+
+						byte=fgetc(f);
+						if (byte==EOF) { printf("Bad xex file\n"); break; }
+						fromaddr|=((byte&0xff)<<8);
+
+					} while (fromaddr==0xffff && byte !=EOF);
+
+					if (byte==EOF) break;
+
+					byte=fgetc(f);
+					if (byte==EOF) { printf("Bad xex file\n"); break; }
+					toaddr=byte&0xff;
+
+					byte=fgetc(f);
+					if (byte==EOF) { printf("Bad xex file\n"); break; }
+					toaddr|=((byte&0xff)<<8);
+
+					*addr=fromaddr; /* sets to last load addr */
+					if ((int)toaddr-(int)fromaddr<0) { printf("Bad xex file\n"); break; }
+					nbytes=toaddr-fromaddr+1;
+
+					/* if not full block, error */
+					if (fread(&MEMORY_mem[*addr], nbytes, 1, f) == 0) {
+						printf("Bad xex file\n");
+						break;
+					}
+				}
 				fclose(f);
+			}
+		}
+		else { /* !xex */
+			if (get_hex2(addr, &nbytes) && *addr + nbytes <= 0x10000) {
+				FILE *f = fopen(filename, "rb");
+				if (f == NULL)
+					perror(filename);
+				else {
+					/* read as many bytes as given or available */
+					if (fread(&MEMORY_mem[*addr], 1, nbytes, f) == 0)
+						printf("Could not read bytes\n");
+					fclose(f);
+				}
 			}
 		}
 	}
@@ -2630,6 +2688,160 @@ static void configure_labels(UWORD *addr)
 }
 #endif /* MONITOR_HINTS */
 
+static void print_flags(char *buf, char* flags, UWORD value)
+{
+	int i;
+	int l = strlen(flags);
+	for (i = 0; i < l; i++)
+		buf[i] = (value & (1 << (l-1-i)))
+			? flags[i]
+			: '_';
+}
+
+static void show_cartridge_info(CARTRIDGE_image_t *cart, char *desc)
+{
+	if (cart->type != CARTRIDGE_NONE) {
+		printf("%s cartridge\n", desc);
+		printf("Type:  %03i (%s)\n", cart->type, CARTRIDGES[cart->type].description);
+		printf("Image: %s (%s)\n", cart->filename, cart->raw ? "RAW" : "CART");
+
+		switch (cart->type) {
+		case CARTRIDGE_RAMCART_64:
+		case CARTRIDGE_RAMCART_128:
+			printf("Memory:   $8000-$9FFF: %s  $A000-$BFFF: %s\n",
+				(cart->state & 0x0002) ? "On " : "Off",
+				((cart->state & 0x0001) ^ ((cart->state & 0x1000) >> 12)) ? "Off" : "On " );
+			printf("Access:   %s\n", (cart->state & 0x1000) ? "Read/Write" : "Read Only");
+			printf("Register: %s\n", (cart->state & 0x0004) ? "Locked" : "Enabled");
+			printf("Bank:     $%02X\n", (cart->state & 0x0038) >> 3);
+			break;
+		case CARTRIDGE_DOUBLE_RAMCART_256:
+			printf("Memory:   $8000-$9FFF: %s  $A000-$BFFF: %s\n",
+				(cart->state & 0x0002) ? "On " : "Off",
+				((cart->state & 0x0001) ^ ((cart->state & 0x1000) >> 12)) ? "Off" : "On " );
+			printf("Access:   %s\n", (cart->state & 0x1000) ? "Read/Write" : "Read Only");
+			if (cart->state & 0x2000) {
+				printf( "Bank:     $%02X    128K Module Order: %s    256K mode\n",
+					((cart->state & 0x0038) >> 3) | ((cart->state & 0x004) << 1),
+					(cart->state & 0x4000) ? "Swapped" : "Normal " );
+			}
+			else {
+				printf("Register: %s\n", (cart->state & 0x0004) ? "Locked" : "Enabled");
+				printf( "Bank:     $%02X    128K Module: %i    2x128K mode\n",
+					(cart->state & 0x0038) >> 3,
+					(cart->state & 0x4000) >> 14 );
+			}
+			break;
+		case CARTRIDGE_RAMCART_1M: {
+				char switches[] = "---";
+				printf("Memory:   $8000-$9FFF: %s  $A000-$BFFF: %s\n",
+					(cart->state & 0x0002) ? "On " : "Off",
+					((cart->state & 0x0001) ^ ((cart->state & 0x1000) >> 12)) ? "Off" : "On " );
+				printf("Access:   %s\n", (cart->state & 0x1000) ? "Read/Write" : "Read Only");
+				if (cart->state & 0x8000) {
+					print_flags(switches, "---", (cart->state | 0x00ff) >> 5);
+					printf( "Bank:     $%02X    1M Module: $%02X (%s)   ABC jumpers installed\n",
+						((cart->state & 0x0038) >> 3) | ((cart->state & 0x0004) << 1) | ((cart->state & 0x00c0) >> 2),
+						((cart->state & 0x0300) >> 8),
+						switches );
+				}
+				else {
+					print_flags(switches, "CBA", ((cart->state & 0x0004) >> 2) | ((cart->state & 0x03c0) >> 5) );
+					printf( "Bank:     $%02X    128K Module: $%02X (%s)\n",
+						((cart->state & 0x0038) >> 3),
+						((cart->state & 0x0004) >> 2) | ((cart->state & 0x03c0) >> 5),
+						switches );
+				}
+			}
+			break;
+		case CARTRIDGE_RAMCART_2M: {
+				char switches[] = "----";
+				printf("Memory:   $8000-$9FFF: %s  $A000-$BFFF: %s\n",
+					(cart->state & 0x0002) ? "On " : "Off",
+					((cart->state & 0x0001) ^ ((cart->state & 0x1000) >> 12)) ? "Off" : "On " );
+				printf("Access:   %s\n", (cart->state & 0x1000) ? "Read/Write" : "Read Only");
+				if (cart->state & 0x8000) {
+					print_flags(switches, "1---", (cart->state | 0x00ff) >> 5);
+					printf( "Bank:     $%02X    1M Module: $%02X (%s)   ABC jumpers installed\n",
+						((cart->state & 0x0038) >> 3) | ((cart->state & 0x0004) << 1) | ((cart->state & 0x00c0) >> 2),
+						((cart->state & 0x0300) >> 8),
+						switches );
+				}
+				else {
+					print_flags(switches, "1CBA", ((cart->state & 0x0004) >> 2) | ((cart->state & 0x03c0) >> 5) );
+					printf( "Bank:     $%02X    128K Module: $%02X (%s)\n",
+						((cart->state & 0x0038) >> 3),
+						((cart->state & 0x0004) >> 2) | ((cart->state & 0x03c0) >> 5),
+						switches );
+				}
+			}
+			break;
+		case CARTRIDGE_RAMCART_4M: {
+				char switches[] = "-----";
+				printf("Memory:   $8000-$9FFF: %s  $A000-$BFFF: %s\n",
+					(cart->state & 0x0002) ? "On " : "Off",
+					((cart->state & 0x0001) ^ ((cart->state & 0x1000) >> 12)) ? "Off" : "On " );
+				printf("Access:   %s\n", (cart->state & 0x1000) ? "Read/Write" : "Read Only");
+				if (cart->state & 0x8000) {
+					print_flags(switches, "2D---", (cart->state | 0x00ff) >> 5);
+					printf( "Bank:     $%02X    1M Module: $%02X (%s)   ABC jumpers installed\n",
+						((cart->state & 0x0038) >> 3) | ((cart->state & 0x0004) << 1) | ((cart->state & 0x00c0) >> 2),
+						((cart->state & 0x0300) >> 8),
+						switches );
+				}
+				else {
+					print_flags(switches, "2DCBA", ((cart->state & 0x0004) >> 2) | ((cart->state & 0x03c0) >> 5) );
+					printf( "Bank:     $%02X    128K Module: $%02X (%s)\n",
+						((cart->state & 0x0038) >> 3),
+						((cart->state & 0x0004) >> 2) | ((cart->state & 0x03c0) >> 5),
+						switches );
+				}
+			}
+			break;
+		case CARTRIDGE_RAMCART_8M:
+			printf("Memory:   $8000-$9FFF: %s  $A000-$BFFF: %s\n",
+				(cart->state & 0x0002) ? "On " : "Off",
+				((cart->state & 0x0001) ^ ((cart->state & 0x1000) >> 12)) ? "Off" : "On " );
+			printf("Access:   %s\n", (cart->state & 0x1000) ? "Read/Write" : "Read Only");
+			printf( "Bank:     $%02X    1M Module: $%02X\n",
+				((cart->state & 0x0038) >> 3) | ((cart->state & 0x0004) << 1) | ((cart->state & 0x00c0) >> 2),
+				((cart->state & 0x0700) >> 8) );
+			break;
+		case CARTRIDGE_RAMCART_16M:
+			printf("Memory:   $8000-$9FFF: %s  $A000-$BFFF: %s\n",
+				(cart->state & 0x0002) ? "On " : "Off",
+				((cart->state & 0x0001) ^ ((cart->state & 0x1000) >> 12)) ? "Off" : "On " );
+			printf("Access:   %s\n", (cart->state & 0x1000) ? "Read/Write" : "Read Only");
+			printf( "Bank:     $%02X    1M Module: $%02X\n",
+				((cart->state & 0x0038) >> 3) | ((cart->state & 0x0004) << 1) | ((cart->state & 0x00c0) >> 2),
+				((cart->state & 0x0f00) >> 8) );
+			break;
+		case CARTRIDGE_RAMCART_32M:
+			printf("Memory:   $8000-$9FFF: %s  $A000-$BFFF: %s\n",
+				(cart->state & 0x0002) ? "On " : "Off",
+				((cart->state & 0x0001) ^ ((cart->state & 0x1000) >> 12)) ? "Off" : "On " );
+			printf("Access:   %s\n", (cart->state & 0x1000) ? "Read/Write" : "Read Only");
+			printf( "Bank:     $%02X    1M Module: $%02X\n",
+				((cart->state & 0x00038) >> 3) | ((cart->state & 0x00004) << 1) | ((cart->state & 0x000c0) >> 2),
+				((cart->state & 0x00f00) >> 8) | ((cart->state & 0x40000) >> 14) );
+			break;
+		case CARTRIDGE_SIDICAR_32:
+			printf("Memory:   $8000-$9FFF: %s\n", (cart->state & 0x10) ? "On" : "Off");
+			printf("Bank:     $%02X\n", (cart->state & 0x03));
+			break;
+		default:
+			printf("State: $%08X\n", cart->state);
+		}
+	}
+}
+
+/* Displays cartridge info. */
+static void show_CARTRIDGE(void)
+{
+	show_cartridge_info(&CARTRIDGE_main, "Main");
+	show_cartridge_info(&CARTRIDGE_piggyback, "Piggyback");
+}
+
 /* Displays current ANTIC state. */
 static void show_ANTIC(void)
 {
@@ -2873,7 +3085,12 @@ static void show_help(void)
 		"RAM startaddr endaddr          - Convert memory block into RAM\n"
 		"ROM startaddr endaddr          - Convert memory block into ROM\n"
 		"HARDWARE startaddr endaddr     - Convert memory block into HARDWARE\n"
-		"READ filename startaddr nbytes - Read file into memory\n");
+		"CART                           - Show cartridge information\n");
+	printf(
+		"READ [XEX] filename or filename startaddr nbytes\n"
+		"                               - Read file into memory\n"
+		"                                 With XEX read Atari executable,\n"
+		"                                 does not init nor run (useful for patches)\n");
 	printf(
 		"WRITE [XEX] startaddr endaddr [runaddr] [file]\n"
 		"                               - Write memory block to a file (memdump.dat).\n"
@@ -3677,6 +3894,8 @@ int MONITOR_Run(void)
 		else if (strcmp(t, "HARDWARE") == 0)
 			monitor_set_hardware();
 #endif /* PAGED_ATTRIB */
+		else if (strcmp(t, "CART") == 0)
+			show_CARTRIDGE();
 		else if (strcmp(t, "COLDSTART") == 0) {
 			Atari800_Coldstart();
 			PLUS_EXIT_MONITOR;
