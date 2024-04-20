@@ -27,6 +27,7 @@ build-stamp:
 
 bld-sdl:
 	if [ -e Makefile ]; then $(MAKE) clean; fi
+	./autogen.sh
 	./configure \
 		 --with-video=sdl --with-sound=sdl
 	$(MAKE)
