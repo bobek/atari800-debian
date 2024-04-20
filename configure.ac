@@ -21,7 +21,7 @@ dnl   along with Atari800; if not, write to the Free Software
 dnl   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 AC_PREREQ(2.57)
-AC_INIT(Atari800, 5.0.0, pstehlik@sophics.cz)
+AC_INIT(Atari800, 5.2.0, pstehlik@sophics.cz)
 AC_CONFIG_SRCDIR(src/atari.c)
 AC_CONFIG_HEADER(src/config.h)
 AC_CONFIG_MACRO_DIR([m4])
@@ -51,7 +51,6 @@ case "$target" in
         echo "    falcon           (Atari Falcon: set --host=m68k-atari-mint)"
         echo "    firebee          (FireBee: set --host=m68k-atari-mint)"
         echo "    ps2              (Sony PlayStation 2)"
-        echo "    rpi              (Raspberry Pi: set --host=arm-linux)"
         echo "    windx            (Windows with DirectX only)"
         echo "    libatari800      (Atari800 as a library (developers only))"
         echo "    x11              (Standard X11)"
@@ -59,7 +58,13 @@ case "$target" in
         echo "    (x11-)shm        (Standard X11 with shared memory extensions)"
         echo "    (x11-)xview      (XView on X11)"
         echo "    (x11-)xview-shm  (XView on X11, with shared memory extensions)"
-        echo
+        echo "Legacy Target:"
+        echo "    rpi              (Raspberry Pi. Still available, but works only"
+        echo "                     with Stretch and Buster versions of Pi OS."
+        echo "                     Depends upon Broadcom libraries, brcmGLESv and"
+        echo "                     brcmEGL, which were dropped from Bullseye."
+        echo "                     Pis running Bullseye and later may be treated"
+        echo "                     as default targets.)"
         exit 1;
         ;;
 esac
@@ -354,15 +359,22 @@ if [[ "$a8_target" = "android" ]]; then
     echo "hardcoding libz"
     LIBS="-lz $LIBS"
     AC_DEFINE(HAVE_LIBZ)
+    SUPPORTS_LIBZ="yes"
     dnl libm is automatically appended by the build system
 elif [[ "$a8_target" = "libatari800" ]]; then
     AC_CHECK_LIB(m,cos,[LIBS="-lm $LIBS"])
     AC_CHECK_FUNCS(setjmp)
+    SUPPORTS_LIBZ="no"
 else
-	AC_CHECK_LIB(z,gzopen)
+    dnl needs SUPPORTS_LIBZ shell variable for file_export test below
+	AC_CHECK_LIB(z,gzopen,[SUPPORTS_LIBZ=yes],[SUPPORTS_LIBZ=no])
+    if [[ "$SUPPORTS_LIBZ" = "yes" ]]; then
+        AC_DEFINE(HAVE_LIBZ,1,[Supports zlib compression library.])
+        LIBS="-lz $LIBS"
+    fi
 
     dnl Need SUPPORTS_LIBPNG shell variable for PNG video codec test below
-	AC_CHECK_LIB(png,png_get_libpng_ver,[LIBS="-lpng $LIBS"; SUPPORTS_LIBPNG=yes],[SUPPORTS_LIBPNG=no])
+	AC_CHECK_LIB(png,png_get_libpng_ver,[SUPPORTS_LIBPNG=yes],[SUPPORTS_LIBPNG=no])
     if [[ "$SUPPORTS_LIBPNG" = "yes" ]]; then
         AC_DEFINE(HAVE_LIBPNG,1,[Supports PNG image compression library.])
     fi
@@ -370,7 +382,6 @@ else
 	AC_CHECK_LIB(m,cos,[LIBS="-lm $LIBS"])
 	AC_CHECK_LIB(ossaudio,_oss_ioctl,[LIBS="-lossaudio $LIBS"])
 fi
-AM_CONDITIONAL([WITH_LIBPNG], test "$SUPPORTS_LIBPNG" = "yes")
 
 
 dnl Set OBJS and libraries depending on host and target...
@@ -1102,42 +1113,50 @@ if [[ "$with_sound" != no ]]; then
               [Emulate the Alien Group Voice Box (default=ON)],
               VOICEBOX,[Define to emulate the Alien Group Voice Box.]
              )
+    A8_OPTION(audiorecording,"yes",
+            [Support audio recording to sound or AVI files (default=ON)],
+            AUDIO_RECORDING,[Define to enable support for audio recording to files.]
+            )
 
-    supported_audio_codecs="pcm adpcm mulaw"
-    AC_ARG_WITH(mp3,
-        [AC_HELP_STRING(--with-mp3@<:@=no|yes|lame@:>@,[Select mp3 audio @<:@default=check@:>@])],
-        [
-            case "$withval" in
-                no | yes | check | lame)
-                    ;;
-                *)
-                    AC_MSG_ERROR([unrecognized value for --with-mp3: "$withval"])
-                    ;;
-            esac
-        ],
-        [with_mp3=check])
-    if [[ "$with_mp3" != "no" ]]; then
-        if [[ "$with_mp3" = check -o "$with_mp3" = yes -o "$with_mp3" = lame ]]; then
-            AC_CHECK_LIB(mp3lame, lame_init, [
-                A8_ADD_INCLUDE_PATH([lame],[lame.h],[/usr/include /usr/local/include],[lame],[
-                    if [[ "$with_mp3" = yes -o "$with_mp3" = "lame" ]]; then
-                        AC_MSG_ERROR([lame.h not found, modify CPPFLAGS or use --with-mp3=check])
+    if [[ "$WANT_AUDIO_RECORDING" = "yes" ]]; then
+        supported_audio_codecs="pcm adpcm mulaw"
+        AC_ARG_WITH(mp3,
+            [AC_HELP_STRING(--with-mp3@<:@=no|yes|lame@:>@,[Select mp3 audio @<:@default=check@:>@])],
+            [
+                case "$withval" in
+                    no | yes | check | lame)
+                        ;;
+                    *)
+                        AC_MSG_ERROR([unrecognized value for --with-mp3: "$withval"])
+                        ;;
+                esac
+            ],
+            [with_mp3=check])
+        if [[ "$with_mp3" != "no" ]]; then
+            if [[ "$with_mp3" = check -o "$with_mp3" = yes -o "$with_mp3" = lame ]]; then
+                AC_CHECK_LIB(mp3lame, lame_init, [
+                    A8_ADD_INCLUDE_PATH([lame],[lame.h],[/usr/include /usr/local/include],[lame],[
+                        if [[ "$with_mp3" = yes -o "$with_mp3" = "lame" ]]; then
+                            AC_MSG_ERROR([lame.h not found, modify CPPFLAGS or use --with-mp3=check])
+                        fi
+                        with_mp3="no"
+                    ])
+                    if [[ $with_mp3 != no ]]; then
+                        LIBS="-lmp3lame $LIBS"
+                        AC_DEFINE(AUDIO_CODEC_MP3,1,[Supports mp3 audio])
+                        supported_audio_codecs="$supported_audio_codecs mp3"
+                        with_mp3="libmp3lame"
                     fi
-                    with_mp3=no
+                ], [
+                    if [[ "$with_mp3" = yes -o "$with_mp3" = "lame" ]]; then
+                        AC_MSG_ERROR([unable to find libmp3lame, modify LDFLAGS or use --with-mp3=check])
+                    fi
+                    with_mp3="no"
                 ])
-                if [[ $with_mp3 != no ]]; then
-                    LIBS="-lmp3lame $LIBS"
-                    AC_DEFINE(AUDIO_CODEC_MP3,1,[Supports mp3 audio])
-                    supported_audio_codecs="$supported_audio_codecs mp3"
-                    with_mp3="libmp3lame"
-                fi
-            ], [
-                if [[ "$with_mp3" = yes -o "$with_mp3" = "lame" ]]; then
-                    AC_MSG_ERROR([unable to find libmp3lame, modify LDFLAGS or use --with-mp3=check])
-                fi
-                with_mp3="no"
-            ])
+            fi
         fi
+    else
+        with_mp3="no"
     fi
 else
     WANT_NONLINEAR_MIXING="no"
@@ -1149,37 +1168,48 @@ else
     WANT_SERIO_SOUND="no"
     WANT_CLIP_SOUND="no"
     WANT_PBI_XLD_SOUND="no"
+    WANT_AUDIO_RECORDING="no"
     WANT_AUDIO_CODEC_MP3="no"
 fi
 AM_CONDITIONAL([WANT_PBI_XLD], test "$WANT_PBI_XLD" = "yes")
 AM_CONDITIONAL([WANT_VOICEBOX], test "$WANT_VOICEBOX" = "yes")
 AM_CONDITIONAL([WANT_PBI_XLD_OR_VOICEBOX], test "$WANT_PBI_XLD" = "yes" -o "$WANT_VOICEBOX" = "yes")
 AM_CONDITIONAL([WANT_PBI_MIO_OR_BB], test "$WANT_PBI_MIO" = "yes" -o "$WANT_PBI_BB" = "yes")
+AM_CONDITIONAL([WITH_AUDIO_CODECS], test "$WANT_AUDIO_RECORDING" = "yes")
 AM_CONDITIONAL([WITH_AUDIO_CODEC_MP3], test "$with_mp3" != "no")
 
 if [[ "$with_video" != no -a "$WANT_CURSES_BASIC" != yes ]]; then
-    have_bitmapped_screen=yes
     A8_OPTION(videorecording,"yes",
             [Support video recording to AVI files (default=ON)],
             VIDEO_RECORDING,[Define to enable support for AVI video/audio recording.]
             )
-    supported_image_formats="pcx"
-    if [[ "$SUPPORTS_LIBPNG" = "yes" ]]; then
-        supported_image_formats="$supported_image_formats png"
+    A8_OPTION(screenshots,"yes",
+            [Support saving screenshots to files (default=ON)],
+            SCREENSHOTS,[Define to enable support for screenshot file saving.]
+            )
+    if [[ "$WANT_SCREENSHOTS" = "yes" ]]; then
+        supported_image_formats="pcx"
+        if [[ "$SUPPORTS_LIBPNG" = "yes" ]]; then
+            supported_image_formats="$supported_image_formats png"
+        fi
+    fi
+    if [[ "$WANT_SCREENSHOTS" = "yes" -o "WANT_VIDEO_RECORDING" = "yes" ]]; then
+        if [[ "$SUPPORTS_LIBPNG" = "yes" ]]; then
+            LIBS="$LIBS -lpng"
+        fi
     fi
 else
-    have_bitmapped_screen="no"
     WANT_VIDEO_RECORDING="no"
+    WANT_SCREENSHOTS="no"
 fi
 
-if [[ "$with_sound" != no -o "$WANT_VIDEO_RECORDING" = yes ]]; then
-    AC_DEFINE(MULTIMEDIA, 1, [Define to provide multimedia recording capability.])
-fi
-AM_CONDITIONAL([WITH_MULTIMEDIA], test "$with_sound" != no -o "$WANT_VIDEO_RECORDING" = "yes")
+AM_CONDITIONAL([WITH_MULTIMEDIA], test "$WANT_AUDIO_RECORDING" = "yes" -o "$WANT_VIDEO_RECORDING" = "yes")
+AM_CONDITIONAL([WITH_IMAGE_CODECS], test "$WANT_SCREENSHOTS" = "yes" -o "$WANT_VIDEO_RECORDING" = "yes")
+AM_CONDITIONAL([WITH_IMAGE_CODEC_PNG], test "$SUPPORTS_LIBPNG" = "yes")
 
 dnl file_export.c is needed when sound is enabled (for WAV recording) or when AVI recording
 dnl is enabled, or for screenshots when screen.c is compiled into the code.
-AM_CONDITIONAL([WITH_FILE_EXPORT], test "$with_sound" != no -o "$have_bitmapped_screen" = "yes")
+AM_CONDITIONAL([WITH_FILE_EXPORT], test "$WANT_AUDIO_RECORDING" = "yes" -o "$WANT_VIDEO_RECORDING" = "yes" -o "$WANT_SCREENSHOTS" = "yes" -o "$SUPPORTS_LIBZ" = "yes")
 
 dnl Set video recording configuration options
 
@@ -1205,7 +1235,7 @@ if [[ "$WANT_VIDEO_RECORDING" = "yes" ]]; then
     fi
 fi
 
-AM_CONDITIONAL([WITH_VIDEO_RECORDING], test "$WANT_VIDEO_RECORDING" = "yes")
+AM_CONDITIONAL([WITH_VIDEO_CODECS], test "$WANT_VIDEO_RECORDING" = "yes")
 AM_CONDITIONAL([WITH_VIDEO_CODEC_PNG], test "$WANT_VIDEO_RECORDING" = "yes" -a "$WANT_VIDEO_CODEC_PNG" = "yes")
 AM_CONDITIONAL([WITH_VIDEO_CODEC_ZMBV], test "$WANT_VIDEO_RECORDING" = "yes" -a "$WANT_VIDEO_CODEC_ZMBV" = "yes")
 
@@ -1304,11 +1334,16 @@ if [[ "$with_opengl" != no ]]; then
     with_opengl=$have_opengl
 fi
 
+dnl The opengl-by-default option was created in PR #118 to allow packages to be built
+dnl for the Raspberry Pi 4 which would install and run properly without the user having
+dnl to turn on acceleration by hand.  The need for this disappeared in Pi OS Bullseye
+dnl with the introduction of an efficient KMS video driver, but the option remains, and
+dnl may used for any target that requires acceleration to run properly.
 if [[ "$with_opengl" = "yes" ]]; then
     AC_DEFINE(HAVE_OPENGL, 1, [Support for OpenGL graphics acceleration.])
     A8_OPTION(opengl-by-default,no,
               [Set VIDEO_ACCEL=1 in the config file created on first run after installation to enable OpenGL hardware acceleration (OpenGL-aware targets) (default set VIDEO_ACCEL=0)],
-              VIDEO_ACCEL_ON_BY_DEFAULT,[Define for targets too slow to run without OpenGL video acceleration, supported only with --with-opengl]
+              VIDEO_ACCEL_ON_BY_DEFAULT,[Define for targets that require acceleration to run properly, supported only with --with-opengl.]
              )
 fi
 AM_CONDITIONAL([WITH_OPENGL], test "$with_opengl" = "yes")
@@ -1419,8 +1454,11 @@ if [[ "$a8_target" = default ]]; then
     esac
 fi
 if [[ "$a8_target" != "default" -o "$with_video" != no ]]; then
+    echo "Using screenshots?....................: $WANT_SCREENSHOTS"
+    if [[ "$WANT_SCREENSHOTS" = "yes" ]]; then
+        echo "    Supported screenshot formats......: $supported_image_formats"
+    fi
     if [[ "$WANT_CURSES_BASIC" != "yes" ]]; then
-        echo "Supported screenshot formats..........: $supported_image_formats"
         echo "Using cycle exact?....................: $WANT_NEW_CYCLE_EXACT"
         echo "Using the very slow computer support?.: $WANT_VERY_SLOW"
     fi
@@ -1459,9 +1497,12 @@ if [[ "$with_sound" != no ]]; then
     fi
     echo "    Using 1400XL/1450XLD emulation?...: $WANT_PBI_XLD"
     echo "    Using sound clipping?.............: $WANT_CLIP_SOUND"
-    echo "    Supported audio codecs............: $supported_audio_codecs"
-    if [[ "$with_mp3" != "no" ]]; then
-        echo "        Library for mp3 audio.........: $with_mp3"
+    echo "    Using audio recording?............: $WANT_AUDIO_RECORDING"
+    if [[ "$WANT_AUDIO_RECORDING" = "yes" ]]; then
+        echo "        Supported audio codecs........: $supported_audio_codecs"
+        if [[ "$with_mp3" != "no" ]]; then
+            echo "        Library for mp3 audio.........: $with_mp3"
+        fi
     fi
 else
     echo "    (Sound sub-options disabled)"
