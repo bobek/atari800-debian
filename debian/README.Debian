@@ -6,16 +6,11 @@ The Atari ROMs can be downloaded from:
 	http://prdownloads.sf.net/atari800/xf25.zip
 
 Note that if you don't own an Atari, getting the ROMs via ftp may not be 
-legal. You must have the ROMs to use this emulator. The system admin should
-install the ROMS in /usr/local/lib/atari/ROMS/ or anywhere else if you
-adapt the configuration file (see the provided atari800.cfg).
+legal. You must have the ROMs to use this emulator.
 
-Getting Atari Software
-----------------------
-
-To add other software, you'll have to find your own disk images (some are 
-in the xf25.zip I mentioned above), and install them either in
-/usr/local/lib/atari/DISKS or somewhere else.
+To add other software, you'll have to find your own disk images (some are
+in the xf25.zip mentioned above). You need to change atari800.cfg to point
+to the appropriate directories.
 
 Running the Emulator
 --------------------
