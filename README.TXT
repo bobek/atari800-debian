@@ -1,4 +1,4 @@
-Atari800 emulator version 5.2.0
+Atari800 emulator version 7.1.2
 -------------------------------
 
 This is a free and portable Atari 8-bit computer and 5200 console emulator,
@@ -28,8 +28,5 @@ go to original author David Firth and all the people that contributed since then
 EnJoy!
 
 Petr Stehlik
-Dec 29, 2023
-
-E-mail: pstehlik@sophics.cz
 
 Project homepage: http://atari800.github.io/
