@@ -1,3 +1,9 @@
+atari800 (7.1.2-1) unstable; urgency=medium
+
+  * [8305b60] New upstream version 7.1.2
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Mon, 27 Jul 2026 08:58:11 +0200
+
 atari800 (5.2.0-2) unstable; urgency=medium
 
   * [b80f407] Remove the config from the package

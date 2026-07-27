@@ -29,7 +29,7 @@ bld-sdl:
 	if [ -e Makefile ]; then $(MAKE) clean; fi
 	./autogen.sh
 	./configure \
-		 --with-video=sdl --with-sound=sdl
+		 --with-video=sdl2 --with-sound=sdl2
 	$(MAKE)
 
 # Clean up after a build and before building a source package
@@ -39,7 +39,9 @@ clean:
 	-rm -f build-stamp
 	if [ -e Makefile ]; then $(MAKE) clean; fi; \
 	 rm -f config.log config.status config.h Makefile
-	mv ./atari800.spec ./tmp ; rm -f atari800 ; rm -f atari800.* ; mv ./tmp ./atari800.spec
+	rm -f src/config.guess src/config.sub
+	find . -maxdepth 1 -type f -name 'atari800.*' ! -name 'atari800.spec' ! -name 'atari800.nsi' -delete
+	rm -f atari800
 	-rm -rf	debian/tmp debian/*~ *~ *.orig *.log \
 		debian/files* debian/substvars*
 	-rm -f data/atari800.xpm
