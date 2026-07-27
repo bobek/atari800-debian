@@ -1,3 +1,11 @@
+atari800 (7.1.2-2) unstable; urgency=medium
+
+  * [4fd56c9] Drop, now useless, info about SDL from description
+  * [6e987c2] man page fix has been forwarded to upstream
+  * [a3a54f6] Update config.guess/sub because of loongarch64
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Mon, 27 Jul 2026 15:57:55 +0200
+
 atari800 (7.1.2-1) unstable; urgency=medium
 
   * [8305b60] New upstream version 7.1.2
