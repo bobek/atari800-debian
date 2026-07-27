@@ -1,0 +1,560 @@
+name: Build CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for installer (e.g. 6.1.0). Empty = skip.'
+        required: false
+        type: string
+  push:
+    branches: [ "master" ]
+    tags:
+      - 'ATARI800_*_*_*'
+  pull_request:
+
+jobs:
+  build-amd64:
+    name: Build on Linux amd64
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:trixie
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: install depends
+      run: |
+        apt-get update
+        apt-get install -y build-essential autoconf automake libtool pkg-config \
+          libsdl2-dev libmp3lame-dev libreadline-dev libgl1-mesa-dev libpng-dev libcurl4-openssl-dev curl ca-certificates git gh
+    - name: autogen
+      run: ./autogen.sh
+    - name: configure
+      run: ./configure --with-opengl --with-readline --with-mp3=lame --with-video=sdl2 --with-sound=sdl2
+    - name: building
+      run: make -j4
+    - name: Archive Atari800 binary
+      uses: actions/upload-artifact@v7
+      with:
+        name: atari800-linux-amd64
+        path: src/atari800
+
+    - name: Build AppImage
+      if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          V=${{ inputs.version }}
+        else
+          V=${GITHUB_REF_NAME#ATARI800_}
+          V=$(echo "$V" | sed 's/_/./g')
+        fi
+        echo "VERSION=$V" >> $GITHUB_ENV
+
+        APPDIR="/tmp/Atari800-${V}.AppDir"
+        mkdir -p "$APPDIR/usr/bin" \
+                 "$APPDIR/usr/share/applications" \
+                 "$APPDIR/usr/share/icons/hicolor/128x128/apps" \
+                 "$APPDIR/usr/share/icons/hicolor/scalable/apps"
+
+        cp src/atari800 "$APPDIR/usr/bin/"
+        cp debian/atari800.desktop "$APPDIR/usr/share/applications/"
+        cp data/atari1.png "$APPDIR/usr/share/icons/hicolor/128x128/apps/atari800.png"
+        cp data/atari2.svg "$APPDIR/usr/share/icons/hicolor/scalable/apps/atari800.svg"
+
+        ln -s usr/share/applications/atari800.desktop "$APPDIR/"
+        ln -s usr/share/icons/hicolor/128x128/apps/atari800.png "$APPDIR/atari800.png"
+
+        echo '#!/bin/sh' > "$APPDIR/AppRun"
+        echo 'HERE="$(dirname "$(readlink -f "$0")")"' >> "$APPDIR/AppRun"
+        echo 'export LD_LIBRARY_PATH="$HERE/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"' >> "$APPDIR/AppRun"
+        echo 'exec "$HERE/usr/bin/atari800" "$@"' >> "$APPDIR/AppRun"
+        chmod +x "$APPDIR/AppRun"
+
+        curl -sL "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
+          -o /tmp/linuxdeploy
+        chmod +x /tmp/linuxdeploy
+        APPIMAGE_EXTRACT_AND_RUN=1 /tmp/linuxdeploy --appdir "$APPDIR"
+
+        # Find and bundle any missing transitive dependencies
+        for f in "$APPDIR/usr/bin/atari800" $(find "$APPDIR/usr/lib" -name '*.so*' -type f 2>/dev/null); do
+          ldd "$f" 2>/dev/null | grep -E '=> /' | awk '{print $3}' | while read -r dep; do
+            depname=$(basename "$dep")
+            if [ ! -f "$APPDIR/usr/lib/$depname" ] && [ ! -L "$APPDIR/usr/lib/$depname" ]; then
+              case "$depname" in
+                libc.so.*|libdl.so.*|libm.so.*|libpthread.so.*|librt.so.*|libresolv.so.*|libutil.so.*|libnss*|libnsl.so.*|libcrypt.so.*|ld-linux*)
+                  ;;
+                *)
+                  cp -L "$dep" "$APPDIR/usr/lib/"
+                  echo "Bundled missing dep: $depname"
+                  ;;
+              esac
+            fi
+          done
+        done
+
+        # Remove GPU driver libraries to avoid version conflicts with host system Mesa/libdrm
+        rm -f "$APPDIR"/usr/lib/libdrm*.so.* "$APPDIR"/usr/lib/libgbm*.so.* "$APPDIR"/usr/lib/libgallium*.so.* \
+              "$APPDIR"/usr/lib/libGL.so.* "$APPDIR"/usr/lib/libGLX.so.* "$APPDIR"/usr/lib/libEGL.so.* "$APPDIR"/usr/lib/libGLdispatch.so.* 2>/dev/null || true
+
+        curl -sL "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64" \
+          -o /tmp/runtime-x86_64
+        curl -sL "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+          -o /tmp/appimagetool
+        chmod +x /tmp/appimagetool
+        APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool --runtime-file /tmp/runtime-x86_64 "$APPDIR" "Atari800-${V}-x86_64.AppImage"
+
+    - name: Upload AppImage
+      if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: atari800-linux-appimage
+        path: Atari800-*.AppImage
+    - name: Attach to release
+      if: startsWith(github.ref, 'refs/tags/ATARI800_')
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create "$GITHUB_REF_NAME" --repo ${{ github.repository }} 2>/dev/null || true
+        gh release upload "$GITHUB_REF_NAME" Atari800-*-x86_64.AppImage --clobber --repo ${{ github.repository }}
+
+  build-linux-i386:
+    if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+    name: Build on Linux i386
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Build and package in 32-bit Debian container
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          V=${{ inputs.version }}
+        else
+          V=${GITHUB_REF_NAME#ATARI800_}
+          V=$(echo "$V" | sed 's/_/./g')
+        fi
+
+        docker run --platform=linux/386 --rm \
+          -v ${{ github.workspace }}:/workspace \
+          -w /workspace \
+          -e V="$V" \
+          debian:trixie \
+          bash -c "
+            set -e
+            apt-get update
+            apt-get install -y build-essential autoconf automake libtool pkg-config \
+              libsdl2-dev libmp3lame-dev libreadline-dev libpng-dev libcurl4-openssl-dev curl ca-certificates
+            ./autogen.sh
+            ./configure --with-video=sdl2 --with-sound=sdl2 --with-mp3=lame
+            make -j\$(nproc)
+
+            APPDIR=\"/tmp/Atari800-\${V}.AppDir\"
+            mkdir -p \"\$APPDIR/usr/bin\" \
+                     \"\$APPDIR/usr/share/applications\" \
+                     \"\$APPDIR/usr/share/icons/hicolor/128x128/apps\" \
+                     \"\$APPDIR/usr/share/icons/hicolor/scalable/apps\"
+
+            cp src/atari800 \"\$APPDIR/usr/bin/\"
+            cp debian/atari800.desktop \"\$APPDIR/usr/share/applications/\"
+            cp data/atari1.png \"\$APPDIR/usr/share/icons/hicolor/128x128/apps/atari800.png\"
+            cp data/atari2.svg \"\$APPDIR/usr/share/icons/hicolor/scalable/apps/atari800.svg\"
+
+            ln -s usr/share/applications/atari800.desktop \"\$APPDIR/\"
+            ln -s usr/share/icons/hicolor/128x128/apps/atari800.png \"\$APPDIR/atari800.png\"
+
+            echo '#!/bin/sh' > \"\$APPDIR/AppRun\"
+            echo 'HERE=\"\$(dirname \"\$(readlink -f \"\$0\")\")\"' >> \"\$APPDIR/AppRun\"
+            echo 'export LD_LIBRARY_PATH=\"\$HERE/usr/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\"' >> \"\$APPDIR/AppRun\"
+            echo 'exec \"\$HERE/usr/bin/atari800\" \"\$@\"' >> \"\$APPDIR/AppRun\"
+            chmod +x \"\$APPDIR/AppRun\"
+
+            curl -sL \"https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-i386.AppImage\" \
+              -o /tmp/linuxdeploy
+            chmod +x /tmp/linuxdeploy
+            APPIMAGE_EXTRACT_AND_RUN=1 /tmp/linuxdeploy --appdir \"\$APPDIR\"
+
+            # Find and bundle any missing transitive dependencies
+            for f in \"\$APPDIR/usr/bin/atari800\" \$(find \"\$APPDIR/usr/lib\" -name '*.so*' -type f 2>/dev/null); do
+              ldd \"\$f\" 2>/dev/null | grep -E '=> /' | awk '{print \$3}' | while read -r dep; do
+                depname=\$(basename \"\$dep\")
+                if [ ! -f \"\$APPDIR/usr/lib/\$depname\" ] && [ ! -L \"\$APPDIR/usr/lib/\$depname\" ]; then
+                  case \"\$depname\" in
+                    libc.so.*|libdl.so.*|libm.so.*|libpthread.so.*|librt.so.*|libresolv.so.*|libutil.so.*|libnss*|libnsl.so.*|libcrypt.so.*|ld-linux*)
+                      ;;
+                    *)
+                      cp -L \"\$dep\" \"\$APPDIR/usr/lib/\"
+                      echo \"Bundled missing dep: \$depname\"
+                      ;;
+                  esac
+                fi
+              done
+            done
+
+
+            # Remove GPU driver libraries to avoid version conflicts with host system Mesa/libdrm
+            rm -f \"\$APPDIR\"/usr/lib/libdrm*.so.* \"\$APPDIR\"/usr/lib/libgbm*.so.* \"\$APPDIR\"/usr/lib/libgallium*.so.* \
+                  \"\$APPDIR\"/usr/lib/libGL.so.* \"\$APPDIR\"/usr/lib/libGLX.so.* \"\$APPDIR\"/usr/lib/libEGL.so.* \"\$APPDIR\"/usr/lib/libGLdispatch.so.* 2>/dev/null || true
+
+            curl -sL \"https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-i686\" \
+              -o /tmp/runtime-i686
+            curl -sL \"https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-i686.AppImage\" \
+              -o /tmp/appimagetool
+            chmod +x /tmp/appimagetool
+            APPIMAGE_EXTRACT_AND_RUN=1 /tmp/appimagetool --runtime-file /tmp/runtime-i686 \"\$APPDIR\" \"Atari800-\${V}-i386.AppImage\"
+          "
+
+    - name: Upload AppImage
+      uses: actions/upload-artifact@v7
+      with:
+        name: atari800-linux-i386-appimage
+        path: Atari800-*.AppImage
+    - name: Attach to release
+      if: startsWith(github.ref, 'refs/tags/ATARI800_')
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create "$GITHUB_REF_NAME" 2>/dev/null || true
+        gh release upload "$GITHUB_REF_NAME" Atari800-*-i386.AppImage --clobber
+
+  build-macos:
+    name: Build on MacOS (arm64)
+    runs-on: macos-14
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: install depends
+      env:
+        HOMEBREW_REQUIRE_TAP_TRUST: 0
+      run:  brew install sdl2 automake readline dylibbundler
+    - name: autogen
+      run: ./autogen.sh
+    - name: configure
+      run: ./configure --with-opengl --with-video=sdl2 --with-sound=sdl2
+    - name: building
+      run: make -j4
+    - name: Package .dmg
+      if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+      run: |
+        if [ -n "${{ inputs.version }}" ]; then
+          V=${{ inputs.version }}
+        else
+          V=${GITHUB_REF_NAME#ATARI800_}
+          V=$(echo "$V" | sed 's/_/./g')
+        fi
+        echo "VERSION=$V" >> $GITHUB_ENV
+
+        APP="Atari800.app"
+        mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/lib"
+
+        cp src/atari800 "$APP/Contents/MacOS/"
+
+        dylibbundler -od -b -x "$APP/Contents/MacOS/atari800" \
+          -d "$APP/Contents/lib/" -p @executable_path/../lib/
+
+        cp README.TXT "$APP/Contents/Resources/"
+        cp COPYING "$APP/Contents/Resources/"
+        cp DOC/USAGE "$APP/Contents/Resources/"
+        cp DOC/INSTALL "$APP/Contents/Resources/"
+        cp DOC/NEWS "$APP/Contents/Resources/"
+        mkdir -p "$APP/Contents/Resources/act"
+        cp act/*.act "$APP/Contents/Resources/act/"
+
+        mkdir -p Atari800.iconset
+        for size in 16 32 48 128 256 512; do
+          sips -z $size $size data/atari1.png \
+            --out "Atari800.iconset/icon_${size}x${size}.png" >/dev/null 2>&1
+        done
+        sips -z 32 32 data/atari1.png \
+          --out Atari800.iconset/icon_16x16@2x.png >/dev/null 2>&1
+        sips -z 64 64 data/atari1.png \
+          --out Atari800.iconset/icon_32x32@2x.png >/dev/null 2>&1
+        sips -z 256 256 data/atari1.png \
+          --out Atari800.iconset/icon_128x128@2x.png >/dev/null 2>&1
+        sips -z 512 512 data/atari1.png \
+          --out Atari800.iconset/icon_256x256@2x.png >/dev/null 2>&1
+        iconutil -c icns Atari800.iconset
+        cp Atari800.icns "$APP/Contents/Resources/"
+
+        {
+          echo '<?xml version="1.0" encoding="UTF-8"?>'
+          echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
+          echo '  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+          echo '<plist version="1.0">'
+          echo '<dict>'
+          echo '  <key>CFBundleDevelopmentRegion</key>'
+          echo '  <string>English</string>'
+          echo '  <key>CFBundleExecutable</key>'
+          echo '  <string>atari800</string>'
+          echo '  <key>CFBundleIconFile</key>'
+          echo '  <string>Atari800</string>'
+          echo '  <key>CFBundleIdentifier</key>'
+          echo '  <string>org.atari800.atari800</string>'
+          echo '  <key>CFBundleInfoDictionaryVersion</key>'
+          echo '  <string>6.0</string>'
+          echo '  <key>CFBundleName</key>'
+          echo '  <string>Atari800</string>'
+          echo '  <key>CFBundlePackageType</key>'
+          echo '  <string>APPL</string>'
+          echo '  <key>CFBundleShortVersionString</key>'
+          echo "  <string>${V}</string>"
+          echo '  <key>CFBundleVersion</key>'
+          echo "  <string>${V}</string>"
+          echo '  <key>NSHighResolutionCapable</key>'
+          echo '  <true/>'
+          echo '</dict>'
+          echo '</plist>'
+        } > "$APP/Contents/Info.plist"
+
+        codesign --deep --force --verify=strict --sign - "$APP" 2>/dev/null || true
+
+        hdiutil create -volname "Atari800 ${V}" -srcfolder "$APP" \
+          -ov -format UDZO "Atari800-${V}-macos-arm64.dmg"
+
+    - name: Upload DMG
+      if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: atari800-macos-arm64-dmg
+        path: Atari800-*.dmg
+    - name: Attach to release
+      if: startsWith(github.ref, 'refs/tags/ATARI800_')
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create "$GITHUB_REF_NAME" 2>/dev/null || true
+        gh release upload "$GITHUB_REF_NAME" Atari800-*-macos-arm64.dmg --clobber
+    - name: Archive Atari800 binary
+      uses: actions/upload-artifact@v7
+      with:
+       name: atari800-macos-arm64
+       path: src/atari800
+
+  build-windows-msys2:
+    name: Build on Windows MSYS2
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            base-devel
+            mingw-w64-x86_64-toolchain
+            autoconf
+            automake
+            libtool
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-readline
+            mingw-w64-x86_64-libpng
+            mingw-w64-x86_64-nsis
+            mingw-w64-x86_64-lame
+            mingw-w64-x86_64-curl-winssl
+            zip
+
+      - name: Run autoreconf
+        run: autoreconf -fiv
+
+      - name: Configure project
+        run: ./configure --with-video=sdl2 --with-sound=sdl2 --with-mp3=lame
+
+      - name: Build project
+        run: make -j$(nproc)
+
+      - name: Verify build
+        run: |
+          if [ ! -f src/atari800.exe ]; then
+            echo "Build failed"
+            exit 1
+          fi
+          echo "Build succeeded"
+
+      - name: Embed app icon
+        if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+        run: |
+          cd src
+          windres --include-dir .. -i atari800_res.rc -o atari800_res_icon.o
+          rm -f atari800.exe
+          make atari800.exe atari800_LDADD="atari800_res_icon.o"
+
+      - name: Archive plain binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: atari800-windows-msys2
+          path: src/atari800.exe
+
+      - name: Stage files and build installer
+        if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+        shell: msys2 {0}
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            V=${{ inputs.version }}
+          else
+            V=${GITHUB_REF_NAME#ATARI800_}
+            V=$(echo "$V" | sed 's/_/./g')
+          fi
+          echo "VERSION=$V" >> $GITHUB_ENV
+          mkdir -p pkg/act pkg/doc
+          cp src/atari800.exe pkg/
+          ldd src/atari800.exe | grep '\/mingw64\/bin\/' | \
+            awk '{print $3}' | xargs -I{} cp {} pkg/
+          cp README.TXT pkg/
+          cp act/*.act pkg/act/
+          cp data/atari800.ico pkg/
+          cp COPYING pkg/doc/COPYING.txt
+          cp DOC/INSTALL pkg/doc/INSTALL.txt
+          cp DOC/NEWS pkg/doc/NEWS.txt
+          cp DOC/USAGE pkg/doc/USAGE.txt
+          makensis -DVERSION=$V -DPLATFORM=win64 atari800.nsi
+          (cd pkg && zip -r "../atari800-${V}-win64.zip" .)
+
+      - name: Verify installer
+        if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+        shell: msys2 {0}
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            V=${{ inputs.version }}
+          else
+            V=${GITHUB_REF_NAME#ATARI800_}
+            V=$(echo "$V" | sed 's/_/./g')
+          fi
+          test -f atari800-$V-win64.zip && echo "Installer OK: atari800-$V-win64.zip"
+
+      - name: Archive portable zip
+        if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: atari800-${{ env.VERSION }}-win64-portable
+          path: atari800-*-win64.zip
+      - name: Archive installer exe
+        if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: atari800-${{ env.VERSION }}-win64-installer
+          path: atari800-*-win64.exe
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/ATARI800_')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" 2>/dev/null || true
+          gh release upload "$GITHUB_REF_NAME" atari800-*-win64.exe atari800-*-win64.zip --clobber
+
+  build-windows-msys2-32:
+    if: startsWith(github.ref, 'refs/tags/ATARI800_') || inputs.version != ''
+    name: Build on Windows MSYS2 (32-bit)
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW32
+          update: true
+          install: >-
+            git
+            base-devel
+            mingw-w64-i686-toolchain
+            autoconf automake libtool
+            mingw-w64-i686-SDL2
+            mingw-w64-i686-readline
+            mingw-w64-i686-libpng
+            mingw-w64-i686-nsis
+            mingw-w64-i686-lame
+            zip
+
+      - name: Run autoreconf
+        run: autoreconf -fiv
+
+      - name: Configure project
+        run: ./configure --with-video=sdl2 --with-sound=sdl2 --with-mp3=lame --disable-download
+
+      - name: Build project
+        run: make -j$(nproc)
+
+      - name: Verify build
+        run: |
+          test -f src/atari800.exe && echo "Build succeeded"
+
+      - name: Embed app icon
+        run: |
+          cd src
+          windres --include-dir .. -i atari800_res.rc -o atari800_res_icon.o
+          rm -f atari800.exe
+          make atari800.exe atari800_LDADD="atari800_res_icon.o"
+
+      - name: Archive plain binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: atari800-windows-msys2-32
+          path: src/atari800.exe
+
+      - name: Stage files and build installer
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            V=${{ inputs.version }}
+          else
+            V=${GITHUB_REF_NAME#ATARI800_}
+            V=$(echo "$V" | sed 's/_/./g')
+          fi
+          echo "VERSION=$V" >> $GITHUB_ENV
+          mkdir -p pkg/act pkg/doc
+          cp src/atari800.exe pkg/
+          for dll in SDL2.dll libmp3lame-0.dll libpng16-16.dll libreadline8.dll libtermcap-0.dll libwinpthread-1.dll zlib1.dll; do
+            find /mingw32/bin -name "$dll" -exec cp {} pkg/ \; 2>/dev/null || true
+          done
+          find /mingw32/bin -name "libgcc_s_dw2-1.dll" -exec cp {} pkg/ \; 2>/dev/null || true
+          cp README.TXT pkg/
+          cp act/*.act pkg/act/
+          cp data/atari800.ico pkg/
+          cp COPYING pkg/doc/COPYING.txt
+          cp DOC/INSTALL pkg/doc/INSTALL.txt
+          cp DOC/NEWS pkg/doc/NEWS.txt
+          cp DOC/USAGE pkg/doc/USAGE.txt
+          makensis -DVERSION=$V -DPLATFORM=win32-no-network atari800.nsi
+          (cd pkg && zip -r "../atari800-${V}-win32-no-network.zip" .)
+
+      - name: Verify installer
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            V=${{ inputs.version }}
+          else
+            V=${GITHUB_REF_NAME#ATARI800_}
+            V=$(echo "$V" | sed 's/_/./g')
+          fi
+          test -f atari800-$V-win32-no-network.zip && echo "Installer OK: atari800-$V-win32-no-network.zip"
+
+      - name: Archive portable zip
+        uses: actions/upload-artifact@v7
+        with:
+          name: atari800-${{ env.VERSION }}-win32-no-network-portable
+          path: atari800-*-win32-no-network.zip
+      - name: Archive installer exe
+        uses: actions/upload-artifact@v7
+        with:
+          name: atari800-${{ env.VERSION }}-win32-no-network-installer
+          path: atari800-*-win32-no-network.exe
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/ATARI800_')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" 2>/dev/null || true
+          gh release upload "$GITHUB_REF_NAME" atari800-*-win32-no-network.exe atari800-*-win32-no-network.zip --clobber

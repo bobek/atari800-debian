@@ -58,6 +58,7 @@ static int CartIsFor5200(int type)
 	case CARTRIDGE_5200_32:
 	case CARTRIDGE_5200_EE_16:
 	case CARTRIDGE_5200_40:
+	case CARTRIDGE_5200_40_ALT:
 	case CARTRIDGE_5200_NS_16:
 	case CARTRIDGE_5200_8:
 	case CARTRIDGE_5200_4:
@@ -159,7 +160,8 @@ static void set_bank_A0AF(int main, int old_state)
 /* WILL_64, EXP_64, DIAMOND_64, SDX_64, WILL_32, ATMAX_128, ATMAX_OLD_1024,
    ATRAX_DEC_128, ATRAX_SDX_64, TURBOSOFT_64, TURBOSOFT_128, ULTRACART_32,
    TURBO_HIT_32, THECART_128M, THECART_32M, THECART_64M, ATRAX_128, ADAWLIAH_32,
-   ADAWLIAH_64, ATMAX_NEW_1024 */
+   ADAWLIAH_64, ATMAX_NEW_1024, JACART_8, JACART_16, JACART_32, JACART_64,
+   JACART_128, JACART_256, JACART_512, JACART_1024 */
 static void set_bank_A0BF(int disable_mask, int bank_mask)
 {
 	if (active_cart->state & disable_mask)
@@ -440,7 +442,35 @@ static void SwitchBank(int old_state)
 		break;
 	case CARTRIDGE_SIDICAR_32:
 		set_bank_SIDICAR(0x03, old_state);
+		break;	
+	case CARTRIDGE_JACART_8:
+		set_bank_A0BF(0x80, 0x00);
 		break;
+	case CARTRIDGE_JACART_16:
+		set_bank_A0BF(0x80, 0x01);
+		break;	
+	case CARTRIDGE_JACART_32:
+		set_bank_A0BF(0x80, 0x03);
+		break;	
+	case CARTRIDGE_JACART_64:
+		set_bank_A0BF(0x80, 0x07);
+		break;	
+	case CARTRIDGE_JACART_128:
+		set_bank_A0BF(0x80, 0x0f);
+		break;	
+	case CARTRIDGE_JACART_256:
+		set_bank_A0BF(0x80, 0x1f);
+		break;	
+	case CARTRIDGE_JACART_512:
+		set_bank_A0BF(0x80, 0x3f);
+		break;	
+	case CARTRIDGE_JACART_1024:
+		set_bank_A0BF(0x80, 0x7f);
+		break;
+	case CARTRIDGE_DCART:
+		set_bank_A0BF(0x80, 0x3f);
+		MEMORY_CopyFromCart(0xd500, 0xd5ff, active_cart->image + (active_cart->state & 0x3f) * 0x2000 + 0x1500);
+		break;			
 	}
 #if DEBUG
 	if (old_state != active_cart->state)
@@ -491,6 +521,21 @@ static void MapActiveCart(void)
 			MEMORY_CopyFromCart(0x5000, 0x5fff, active_cart->image + 0x4000 + ((active_cart->state & 0x0c) >> 2) * 0x1000);
 			MEMORY_CopyFromCart(0x8000, 0x9fff, active_cart->image + 0x8000);
 			MEMORY_CopyFromCart(0xa000, 0xbfff, active_cart->image + 0x8000);
+#ifndef PAGED_ATTRIB
+			MEMORY_SetHARDWARE(0x4ff6, 0x4ff9);
+			MEMORY_SetHARDWARE(0x5ff6, 0x5ff9);
+#else
+			MEMORY_readmap[0x4f] = CARTRIDGE_BountyBob1GetByte;
+			MEMORY_readmap[0x5f] = CARTRIDGE_BountyBob2GetByte;
+			MEMORY_writemap[0x4f] = CARTRIDGE_BountyBob1PutByte;
+			MEMORY_writemap[0x5f] = CARTRIDGE_BountyBob2PutByte;
+#endif
+			break;
+		case CARTRIDGE_5200_40_ALT:
+			MEMORY_CopyFromCart(0x4000, 0x4fff, active_cart->image + 0x2000 + (active_cart->state & 0x03) * 0x1000);
+			MEMORY_CopyFromCart(0x5000, 0x5fff, active_cart->image + 0x6000 + ((active_cart->state & 0x0c) >> 2) * 0x1000);
+			MEMORY_CopyFromCart(0x8000, 0x9fff, active_cart->image);
+			MEMORY_CopyFromCart(0xa000, 0xbfff, active_cart->image);
 #ifndef PAGED_ATTRIB
 			MEMORY_SetHARDWARE(0x4ff6, 0x4ff9);
 			MEMORY_SetHARDWARE(0x5ff6, 0x5ff9);
@@ -595,6 +640,15 @@ static void MapActiveCart(void)
 		case CARTRIDGE_ADAWLIAH_32:
 		case CARTRIDGE_ADAWLIAH_64:
 		case CARTRIDGE_ATMAX_NEW_1024:
+		case CARTRIDGE_JACART_8:
+		case CARTRIDGE_JACART_16:
+		case CARTRIDGE_JACART_32:
+		case CARTRIDGE_JACART_64:
+		case CARTRIDGE_JACART_128:
+		case CARTRIDGE_JACART_256:
+		case CARTRIDGE_JACART_512:
+		case CARTRIDGE_JACART_1024:
+		case CARTRIDGE_DCART:	
 			MEMORY_Cart809fDisable();
 			break;
 		case CARTRIDGE_DB_32:
@@ -938,7 +992,15 @@ static int access_D5(CARTRIDGE_image_t *cart, UWORD addr, int *state)
 		break;
 	case CARTRIDGE_ATMAX_OLD_1024:
 	case CARTRIDGE_MEGAMAX_2048:
-	case CARTRIDGE_ATMAX_NEW_1024:
+	case CARTRIDGE_ATMAX_NEW_1024:	
+	case CARTRIDGE_JACART_8:
+	case CARTRIDGE_JACART_16:
+	case CARTRIDGE_JACART_32:
+	case CARTRIDGE_JACART_64:
+	case CARTRIDGE_JACART_128:
+	case CARTRIDGE_JACART_256:
+	case CARTRIDGE_JACART_512:
+	case CARTRIDGE_JACART_1024:
 		new_state = addr;
 		break;
 	case CARTRIDGE_OSS_8:
@@ -1042,9 +1104,13 @@ static UBYTE GetByte(CARTRIDGE_image_t *cart, UWORD addr, int no_side_effects)
 	case CARTRIDGE_DOUBLE_RAMCART_256:
 		if (cart->state & 0x20000)
 			return cart->state | 0x00c0;
+		break;
 	/*case CARTRIDGE_RAMCART_128:
 	case CARTRIDGE_RAMCART_64:
 		return cart->state | 0x00e0;*/
+	case CARTRIDGE_DCART:
+			return cart->image[((cart->state & 0x3f)*0x2000)+0x1500+(addr & 0xff)];
+		break;
 	}
 	return 0xff;
 }
@@ -1188,6 +1254,9 @@ static void PutByte(CARTRIDGE_image_t *cart, UWORD addr, UBYTE byte)
 		if (/*(addr == 0xd5ff) &&*/ !(byte & 0x80))
 			new_state = byte & 0x13;
 		break;
+	case CARTRIDGE_DCART:
+			new_state = addr;
+		break;
 	default:
 		/* Check types switchable by access to page D5. */
 		if (!access_D5(cart, addr, &new_state))
@@ -1269,8 +1338,12 @@ static void access_BountyBob1(UWORD addr)
 		addr -= 0xf6;
 		new_state = (active_cart->state & 0x0c) | addr;
 		if (new_state != active_cart->state) {
-			MEMORY_CopyFromCart(base_addr, base_addr + 0x0fff,
-			               active_cart->image + addr * 0x1000);
+			if (active_cart->type == CARTRIDGE_5200_40_ALT)
+				MEMORY_CopyFromCart(base_addr, base_addr + 0x0fff,
+			            	active_cart->image + 0x2000 + addr * 0x1000);
+			else
+				MEMORY_CopyFromCart(base_addr, base_addr + 0x0fff,
+			               	active_cart->image + addr * 0x1000);
 			active_cart->state = new_state;
 		}
 	}
@@ -1286,8 +1359,12 @@ static void access_BountyBob2(UWORD addr)
 		addr -= 0xf6;
 		new_state = (active_cart->state & 0x03) | (addr << 2);
 		if (new_state != active_cart->state) {
-			MEMORY_CopyFromCart(base_addr, base_addr + 0x0fff,
-			               active_cart->image + 0x4000 + addr * 0x1000);
+			if (active_cart->type == CARTRIDGE_5200_40_ALT)
+				MEMORY_CopyFromCart(base_addr, base_addr + 0x0fff,
+							active_cart->image + 0x6000 + addr * 0x1000);
+			else
+				MEMORY_CopyFromCart(base_addr, base_addr + 0x0fff,
+							active_cart->image + 0x4000 + addr * 0x1000);
 			active_cart->state = new_state;
 		}
 	}
