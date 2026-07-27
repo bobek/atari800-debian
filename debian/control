@@ -11,7 +11,7 @@ Homepage: https://atari800.github.io
 Package: atari800
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
-Description: Atari 8-bit emulator for SDL
+Description: Atari 8-bit emulator
  Atari800 is an emulator of Atari 8-bit computer systems including the 400, 800,
  1200XL, 600XL, 800XL, 65XE, 130XE, 800XE and the XE Game System,
  and also of the Atari 5200 SuperSystem console.
