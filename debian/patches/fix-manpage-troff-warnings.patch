@@ -1,25 +1,34 @@
-Description: Fix man(1)/troff warnings in the atari800 manual page
- The manual page uses tbl(1) tables but lacks the "'\" t" preprocessor
- line, so man does not run tbl and the tables are emitted as raw text.
- This produces:
- .
-   troff: warning: cannot adjust line; underset by 34n
-   an.tmac: warning: tbl preprocessor failed, or it or soelim was not run;
-            table(s) likely not rendered (TE macro called with TW register
-            undefined)
- .
- Adding the preprocessor line makes tbl run, which in turn exposes three
- tables whose width exactly reaches the available line length (1776u at
- the default 80 column terminal), triggering:
- .
-   warning: centered table wider than line length minus indentation
- .
- Reducing the column separation from the default 3n to 2n for the
- right-hand data columns brings the tables inside the available width
- while keeping the layout intact.
-Author: Antonin Kral <A.Kral@sh.cvut.cz>
-Forwarded: no
+From: Antonin Kral <A.Kral@sh.cvut.cz>
+Date: Mon, 27 Jul 2026 15:54:08 +0200
+Subject: Fix man(1)/troff warnings in the atari800 manual page
+
+Forwarded: yes
 Last-Update: 2026-07-27
+
+The manual page uses tbl(1) tables but lacks the "'\" t" preprocessor
+line, so man does not run tbl and the tables are emitted as raw text.
+This produces:
+
+  troff: warning: cannot adjust line; underset by 34n
+  an.tmac: warning: tbl preprocessor failed, or it or soelim was not run;
+           table(s) likely not rendered (TE macro called with TW register
+           undefined)
+
+Adding the preprocessor line makes tbl run, which in turn exposes three
+tables whose width exactly reaches the available line length (1776u at
+the default 80 column terminal), triggering:
+
+  warning: centered table wider than line length minus indentation
+
+Reducing the column separation from the default 3n to 2n for the
+right-hand data columns brings the tables inside the available width
+while keeping the layout intact.
+---
+ src/atari800.man | 23 ++++++++++++-----------
+ 1 file changed, 12 insertions(+), 11 deletions(-)
+
+diff --git a/src/atari800.man b/src/atari800.man
+index 8aa6f0f..3626901 100644
 --- a/src/atari800.man
 +++ b/src/atari800.man
 @@ -1,3 +1,4 @@
@@ -27,7 +36,7 @@ Last-Update: 2026-07-27
  .TH ATARI800 1 "2026-07-26" "Atari800 7.1.2"
  
  .SH NAME
-@@ -1831,8 +1832,8 @@
+@@ -1831,8 +1832,8 @@ the \fB-compression-level 0\fR command line argument.
  Video Support:
  .TS
  tab(@), center, box;
@@ -38,7 +47,7 @@ Last-Update: 2026-07-27
  Application@Type@Platform@RLE@PNG@ZMBV
  _
  YouTube@Website@Browser@Yes@Yes@Yes
-@@ -1867,9 +1868,9 @@
+@@ -1867,9 +1868,9 @@ ZMBV codec (default compression level):
  tab(@), center, box;
  l | c | c s s s s
  c | c | _ _ _ _ _
@@ -51,7 +60,7 @@ Last-Update: 2026-07-27
  @Average@Estimated recording time
  Game@video@
  @frame@mp3@mp3@ADPCM@8-bit@16-bit
-@@ -1890,9 +1891,9 @@
+@@ -1890,9 +1891,9 @@ RLE codec:
  tab(@), center, box;
  l | c | c s s s s
  c | c | _ _ _ _ _
@@ -64,7 +73,7 @@ Last-Update: 2026-07-27
  @Average@Estimated recording time
  Game@video@
  @frame@mp3@mp3@ADPCM@8-bit@16-bit
-@@ -1913,9 +1914,9 @@
+@@ -1913,9 +1914,9 @@ PNG codec (default compression level):
  tab(@), center, box;
  l | c | c s s s s
  c | c | _ _ _ _ _
