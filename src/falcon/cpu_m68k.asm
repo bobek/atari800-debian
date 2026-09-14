@@ -67,6 +67,8 @@ NEW_CYCLE_EXACT equ 0   ; set to 1 to use the new cycle exact CPU emulation
   ifne NEW_CYCLE_EXACT
   xref ANTIC_cpu2antic_ptr
   xref ANTIC_cur_screen_pos
+  xref POKEY_irq_at_xpos
+  xref POKEY_irq_pending_mask
   endif
   xref ANTIC_xpos
   xref ANTIC_xpos_limit
@@ -662,6 +664,33 @@ SetCFLAG macro
 
 ClrCFLAG macro
   clr.b  CFLAG
+  endm
+
+; take a pending IRQ: push return address and status (B clear), set I and
+; vector through $fffe (7 cycles); expects the complete status in d7 and
+; the stack pointer in d0
+CPUTAKEIRQ macro
+  subq.b #2,d0          ; push PC and P to stack ( PHW + PHB ),
+  andi.b #B_FLAGN,d7    ; the wrong way around for optim.
+  move.b d7,(memory_pointer,d0.l) ; Push P
+  move.l PC6502,d7
+  sub.l  memory_pointer,d7
+  addq.b #1,d0
+  move.b d7,(memory_pointer,d0.l)
+  addq.b #1,d0
+  LoHi d7
+  move.b d7,(memory_pointer,d0.l)
+  subq.b #3,d0
+  move.b d0,CPU_regS
+  SetI
+  move.w (memory_pointer,$fffe.l),d7
+  LoHi d7
+  move.l d7,PC6502
+  add.l  memory_pointer,PC6502
+  addq.l #7,CD
+  ifne   MONITOR_BREAK
+  addq.l #1,MONITOR_ret_nesting
+  endif
   endm
 
 CPU_GetStatus:
@@ -1667,29 +1696,7 @@ opcode_28: ;/* PLP */
   bge     NEXTCHANGE_WITHOUT
   btst   #I_FLAGB,d7
   bne.w  NEXTCHANGE_WITHOUT
-; moveq  #0,d0
-; move.w regS,d0        ; push PC and P to stack ( PHW + PHB ) start
-  subq.b #2,d0          ; but do it the wrong way around for optim.
-  andi.b  #B_FLAGN,d7              ;
-  move.b  d7,(memory_pointer,d0.l) ; Push P
-  move.l PC6502,d7
-  sub.l  memory_pointer,d7
-  addq.b #1,d0     ; wrong way around
-  move.b d7,(memory_pointer,d0.l)  ; Push High
-  addq.b #1,d0
-  LoHi d7
-  move.b d7,(memory_pointer,d0.l)  ; Push Low
-  subq.b #3,d0
-  move.b d0,CPU_regS       ; push PC and P to stack ( PHW + PHB ) end
-  SetI
-  move.w (memory_pointer,$fffe.l),d7
-  LoHi d7
-  move.l d7,PC6502
-  add.l  memory_pointer,PC6502
-  addq.l #7,CD
-  ifne   MONITOR_BREAK
-  addq.l #1,MONITOR_ret_nesting
-  endif
+  CPUTAKEIRQ               ; P is in d7, S in d0
   bra.w  NEXTCHANGE_WITHOUT
 
 opcode_48: ;/* PHA */
@@ -2129,35 +2136,15 @@ opcode_38: ;/* SEC */
 opcode_58: ;/* CLI */
   addq.l #cy_FlagCS,CD
   ClrI
-  tst.b  CPU_IRQ      ; ~ CPUCHECKIRQ
+  tst.b  CPU_IRQ      ; CPUCHECKIRQ
   beq.w  NEXTCHANGE_WITHOUT
   cmp.l   ANTIC_xpos_limit,CD
   bge     NEXTCHANGE_WITHOUT
-  move.l PC6502,d7
-  sub.l  memory_pointer,d7
-  moveq  #0,d0                    ; PHW + PHP (B0)
-  move.w regS,d0
-  subq.b #1,d0     ; wrong way around
-  move.b d7,(memory_pointer,d0.l)
-  addq.b #1,d0
-  LoHi d7
-  move.b d7,(memory_pointer,d0.l)
-  subq.b #2,d0
   ConvertSTATUS_RegP d7
-  andi.b #B_FLAGN,d7
-  move.b d7,(memory_pointer,d0.l)
-  subq.b #1,d0
-  move.b d0,CPU_regS
-  SetI
-  move.w (memory_pointer,$fffe.l),d7
-  LoHi d7
-  move.l d7,PC6502
-  add.l  memory_pointer,PC6502
+  moveq  #0,d0
+  move.w regS,d0
+  CPUTAKEIRQ
   clr.b  CPU_IRQ
-  addq.l #7,CD
-  ifne   MONITOR_BREAK
-  addq.l #1,MONITOR_ret_nesting
-  endif
   bra.w  NEXTCHANGE_WITHOUT
 
 opcode_78: ;/* SEI */
@@ -2324,28 +2311,8 @@ opcode_40: ;/* RTI */
   btst   #I_FLAGB,d7
   bne.w  .no_irq
   moveq  #0,d0
-  move.w regS,d0        ; push PC and P to stack ( PHW + PHB ) start
-  subq.b #2,d0
-  andi.b #B_FLAGN,d7
-  move.b d7,(memory_pointer,d0.l) ; Push P
-  move.l PC6502,d7
-  sub.l  memory_pointer,d7
-  addq.b #1,d0          ; wrong way around
-  move.b d7,(memory_pointer,d0.l)
-  addq.b #1,d0
-  LoHi d7
-  move.b d7,(memory_pointer,d0.l)
-  subq.b #3,d0
-  move.b d0,CPU_regS       ; push PC and P to stack ( PHW + PHB ) end
-  SetI
-  move.w (memory_pointer,$fffe.l),d7
-  LoHi d7
-  move.l d7,PC6502
-  add.l  memory_pointer,PC6502
-  addq.l #7,CD
-  ifne   MONITOR_BREAK
-  addq.l #1,MONITOR_ret_nesting
-  endif
+  move.w regS,d0
+  CPUTAKEIRQ               ; P is in d7, S in d0
 .no_irq:
   ifne   MONITOR_BREAK
   tst.b  MONITOR_break_ret
@@ -3256,6 +3223,11 @@ COMPARE:
 NEXTCHANGE_N:
   ext.w  NFLAG
 NEXTCHANGE_WITHOUT:
+  ifne   NEW_CYCLE_EXACT
+  tst.b  POKEY_irq_pending_mask  ; POKEY timer IRQ pending?
+  bne.w  POKEY_TIMER_IRQ
+POKEY_TIMER_IRQ_DONE:
+  endif
   cmp.l  ANTIC_xpos_limit,CD
   bge.s  END_OF_CYCLE
 ****************************************
@@ -3328,6 +3300,32 @@ END_OF_CYCLE:
   move.l CD,ANTIC_xpos ;returned value
   movem.l (a7)+,d2-d7/a2-a6
   rts
+
+  ifne   NEW_CYCLE_EXACT
+POKEY_TIMER_IRQ:
+  move.l CD,d0
+  subq.l #2,d0                   ; the 6502 polls the IRQ line on the
+  bmi.w  POKEY_TIMER_IRQ_DONE    ; penultimate cycle of an instruction
+  cmp.l  #-999,ANTIC_cur_screen_pos ; ANTIC_DRAWING_SCREEN ?
+  beq.s  .not_drawing
+  move.l ANTIC_cpu2antic_ptr,a0
+  move.l (a0,d0.l*4),d0          ; ANTIC_cpu2antic_ptr[ANTIC_xpos-2]
+.not_drawing:
+  cmp.l  POKEY_irq_at_xpos,d0    ; ... >= POKEY_irq_at_xpos ?
+  blt.w  POKEY_TIMER_IRQ_DONE    ; not yet, keep it pending
+  st     CPU_IRQ                 ; CPU_GenerateIRQ()
+  clr.b  POKEY_irq_pending_mask
+  cmp.l  ANTIC_xpos_limit,CD     ; CPUCHECKIRQ
+  bge.w  POKEY_TIMER_IRQ_DONE    ; we are at an instruction boundary,
+  move.b CPU_regP,d7             ; so take the IRQ right away
+  btst   #I_FLAGB,d7
+  bne.w  POKEY_TIMER_IRQ_DONE
+  ConvertSTATUS_RegP d7
+  moveq  #0,d0
+  move.w regS,d0
+  CPUTAKEIRQ
+  bra.w  POKEY_TIMER_IRQ_DONE
+  endif
 
 go_monitor:
   ConvertSTATUS_RegP_destroy d0

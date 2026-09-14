@@ -56,6 +56,7 @@
 #include <SDL.h>
 #endif
 
+#include "acidtest.h"
 #include "akey.h"
 #include "antic.h"
 #ifdef HAVE_DOWNLOAD
@@ -196,7 +197,7 @@ static char dl_dir[FILENAME_MAX] = "";
 #ifdef CTRL_C_HANDLER
 volatile sig_atomic_t sigint_flag = FALSE;
 
-static RETSIGTYPE sigint_handler(int num)
+static void sigint_handler(int num)
 {
 	sigint_flag = TRUE;
 	/* Avoid restoring the original signal handler. */
@@ -375,14 +376,16 @@ static void PreInitialise(void)
 #ifdef HAVE_DOWNLOAD
 static void PurgeDownloadDir(const char *dir)
 {
-	DIR *d = opendir(dir);
+	DIR *d;
+	struct dirent *entry;
+
+	d = opendir(dir);
 	if (d == NULL)
 		return;
-	struct dirent *entry;
 	while ((entry = readdir(d)) != NULL) {
+		char path[FILENAME_MAX];
 		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 			continue;
-		char path[FILENAME_MAX];
 		Util_catpath(path, dir, entry->d_name);
 		remove(path);
 	}
@@ -466,8 +469,9 @@ int Atari800_Initialise(int *argc, char *argv[])
 
 	if (cfg_source_path == NULL && atari800_exe_dir[0] != '\0') {
 		char checkfile[FILENAME_MAX];
+		FILE *ft;
 		Util_catpath(checkfile, atari800_exe_dir, ".atari800-check");
-		FILE *ft = fopen(checkfile, "w");
+		ft = fopen(checkfile, "w");
 		if (ft != NULL) {
 			fclose(ft);
 			remove(checkfile);
@@ -504,15 +508,6 @@ int Atari800_Initialise(int *argc, char *argv[])
 	/* finally if nothing is found, set some defaults to make
 	   the configuration file easier to edit */
 	SYSROM_SetDefaults();
-
-	/* if no configuration file read, try to save one with the defaults (except when
-	   using libatari800) */
-	if (!got_config)
-#ifdef LIBATARI800
-		; /* prevent warning for unused variable got_config */
-#else
-		CFG_WriteConfig();
-#endif
 
 #endif /* __PLUS */
 
@@ -691,6 +686,9 @@ int Atari800_Initialise(int *argc, char *argv[])
 			if (strcmp(argv[i], "-run") == 0) {
 				if (i_a) run_direct = argv[++i]; else a_m = TRUE;
 			}
+			else if (strcmp(argv[i], "-acid800") == 0) {
+				if (i_a) ACIDTEST_Init(argv[++i]); else a_m = TRUE;
+			}
 #ifdef R_IO_DEVICE
 			else if (strcmp(argv[i], "-rdevice") == 0) {
 				Devices_enable_r_patch = TRUE;
@@ -833,6 +831,7 @@ int Atari800_Initialise(int *argc, char *argv[])
 					Log_print("\t-nostereo        Turn off emulation of two POKEYs");
 #endif
 					Log_print("\t-turbo           Run emulated Atari as fast as possible");
+					Log_print("\t-acid800 <file>  Run the Acid800 suite, compare with expected results in <file>");
 					Log_print("\t-monitor         Start emulated Atari in the monitor");
 #ifdef MONITOR_BREAK
 					Log_print("\t-bbrk            Break on BRK instruction");
@@ -942,6 +941,16 @@ int Atari800_Initialise(int *argc, char *argv[])
 		return FALSE;
 	}
 
+	/* If no configuration file was read, save one with the defaults.  This
+	   has to wait until the platform is initialised, or the file would
+	   describe none of the connected input devices. */
+#ifdef LIBATARI800
+	(void) got_config;
+#else
+	if (!got_config)
+		CFG_WriteConfig();
+#endif
+
 #if SUPPORTS_CHANGE_VIDEOMODE
 #ifndef DONT_DISPLAY
 	if (!VIDEOMODE_InitialiseDisplay()) {
@@ -968,13 +977,15 @@ int Atari800_Initialise(int *argc, char *argv[])
 	j = 1; /* diskno */
 	for (i = 1; i < *argc; i++) {
 		const char *filename = argv[i];
+#ifdef HAVE_DOWNLOAD
+		char dl_buf[FILENAME_MAX+2] = "";
+#endif
 		if (j > 8) {
 			/* The remaining arguments are not necessary disk images, but ignore them... */
 			Log_print("Too many disk image filenames on the command line (max. 8).");
 			break;
 		}
 #ifdef HAVE_DOWNLOAD
-		char dl_buf[FILENAME_MAX+2] = "";
 		if (strncmp(argv[i], "http://", 7) == 0 || strncmp(argv[i], "https://", 8) == 0) {
 			static const char *img_exts[] = { ".atr", ".xfd", ".atx", ".pro", ".dcm", ".xex", ".bas", ".lst", ".cas", ".rom", ".car", ".bin", NULL };
 			if (dl_dir[0] == '\0')
@@ -1088,7 +1099,9 @@ int Atari800_Initialise(int *argc, char *argv[])
 #endif /* SOUND */
 
 #ifdef HAVE_DOWNLOAD
-	if (Atari800_os_version < 0 || Atari800_os_version >= SYSROM_LOADABLE_SIZE) {
+	/* never in the Acid800 check: it must boot the built-in OS everywhere */
+	if (!ACIDTEST_enabled
+	 && (Atari800_os_version < 0 || Atari800_os_version >= SYSROM_LOADABLE_SIZE)) {
 		static const char *rom_exts[] = {".rom", NULL};
 		char rom_dir[FILENAME_MAX];
 		Util_catpath(rom_dir, CFG_data_dir, "rom");
@@ -1528,6 +1541,8 @@ void Atari800_Frame(void)
 	}
 #endif /* BASIC */
 	POKEY_Frame();
+	if (ACIDTEST_enabled)
+		ACIDTEST_Frame();
 #ifdef VIDEO_RECORDING
 	File_Export_WriteVideo();
 #endif

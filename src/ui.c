@@ -344,7 +344,9 @@ static void SystemSettings(void)
 	char default_basic_label[21];
 	/* Size must be long enough to store "<longest XEGAME label> (auto)". */
 	char default_xegame_label[23];
-	char mosaic_label[7]; /* Fits "256 KB" */
+	/* "256 KB" is the longest label in practice, but the compiler cannot see
+	   that MEMORY_mosaic_num_banks is range-checked, so size for any int. */
+	char mosaic_label[16];
 
 	int option = 0;
 	int option2 = 0;
@@ -458,7 +460,7 @@ static void SystemSettings(void)
 			if (MEMORY_mosaic_num_banks == 0)
 				menu_array[7].suffix = mosaic_ram_menu_array[0].item;
 			else {
-				sprintf(mosaic_label, "%i KB", MEMORY_mosaic_num_banks * 4);
+				snprintf(mosaic_label, sizeof(mosaic_label), "%i KB", MEMORY_mosaic_num_banks * 4);
 				menu_array[7].suffix = mosaic_label;
 			}
 		}
@@ -2235,6 +2237,10 @@ static int find_turbo_speed_index(int turbo_speed) {
 	return -1;
 }
 
+#ifdef GUI_SDL
+static void SpecialKeysConfiguration(void);
+#endif
+
 static void AtariSettings(void)
 {
 #ifdef XEP80_EMULATION
@@ -2269,6 +2275,9 @@ static void AtariSettings(void)
 		UI_MENU_SUBMENU(11, "Host device settings"),
 		UI_MENU_SUBMENU(13, "System ROM settings"),
 		UI_MENU_SUBMENU(14, "Configure directories"),
+#ifdef GUI_SDL
+		UI_MENU_SUBMENU(21, "Define special keys mapping"),
+#endif
 #ifndef DREAMCAST
 		UI_MENU_CHECK(16, "Auto-save configuration on exit:"),
 #endif
@@ -2339,6 +2348,11 @@ static void AtariSettings(void)
 		case 14:
 			ConfigureDirectories();
 			break;
+#ifdef GUI_SDL
+		case 21:
+			SpecialKeysConfiguration();
+			break;
+#endif
 #ifndef DREAMCAST
 		case 16:
 			CFG_save_on_exit = !CFG_save_on_exit;
@@ -2402,9 +2416,11 @@ static void QuickSaveState(void) {
 	if (!result) {
 		CantSave(state_filename);
 	}
+#if defined(AUDIO_RECORDING) || defined(VIDEO_RECORDING)
 	else {
 		Screen_SetStatusText("Saved", 120);
 	}
+#endif
 }
 
 static void QuickLoadState(void) {
@@ -2412,9 +2428,11 @@ static void QuickLoadState(void) {
 	if (!result) {
 		CantLoad(state_filename);
 	}
+#if defined(AUDIO_RECORDING) || defined(VIDEO_RECORDING)
 	else {
 		Screen_SetStatusText("Loaded", 120);
 	}
+#endif
 }
 
 static void LoadState(void)
@@ -3614,6 +3632,9 @@ static UI_tMenuItem joy_menu_actions[] = {
 	UI_MENU_ACTION(KEYBASE + UI_MENU_DISK, "Disk"),
 	UI_MENU_ACTION(KEYBASE + UI_MENU_CARTRIDGE, "Cartridge"),
 	UI_MENU_ACTION(KEYBASE + AKEY_UI, "Enter setup"),
+#ifdef USE_UI_BASIC_ONSCREEN_KEYBOARD
+	UI_MENU_ACTION(KEYBASE + AKEY_KEYB, "On-screen keyboard"),
+#endif
 	UI_MENU_ACTION(KEYBASE + AKEY_WARMSTART, "Reset (warm)"),
 	UI_MENU_ACTION(KEYBASE + AKEY_COLDSTART, "Reset (cold)"),
 	UI_MENU_ACTION(KEYBASE + AKEY_TURBO, "Toggle turbo"),
@@ -3691,6 +3712,7 @@ static void JoystickButtonsConfiguration(SDL_INPUT_RealJSConfig_t* js_config) {
 			}
 	
 			if (opt >= 0) {
+				js_config->buttons_custom = 1;
 				JoystickMenuUpdate(js_config);
 			}
 		}
@@ -3710,11 +3732,10 @@ static void PortConfiguration(int port)
 	int is_paddle = (mode == JOY_MODE_PADDLE);
 	SDL_INPUT_RealJSConfig_t *js_config = SDL_INPUT_GetRealJSConfig(port);
 	int potA, potB, btnA, btnB;
-	SDL_INPUT_GetPortPaddleConfig(port, &potA, &potB, &btnA, &btnB);
 #if SDL2
 	static UI_tMenuItem menu_array[] = {
 		UI_MENU_ACTION(0, " Mode:"),
-		UI_MENU_CHECK(1, " Use hat/D-Pad:"),
+		UI_MENU_ACTION(1, " Use:"),
 		UI_MENU_ACTION(2, " Analog axes:"),
 		UI_MENU_ACTION(3, " Paddle A axis:"),
 		UI_MENU_ACTION(4, " Paddle B axis:"),
@@ -3725,11 +3746,22 @@ static void PortConfiguration(int port)
 		UI_MENU_END
 	};
 
+	SDL_INPUT_GetPortPaddleConfig(port, &potA, &potB, &btnA, &btnB);
 	snprintf(title, sizeof(title), "Port %d configuration", port + 1);
 
 	for (;;) {
 		menu_array[0].suffix = is_paddle ? "Paddle" : "Joystick";
-		SetItemChecked(menu_array, 1, js_config->use_hat);
+		{
+			static char hat_suffix[20];
+			const char *src = js_config->use_hat == JOY_USE_HAT_AUTO
+				? (SDL_INPUT_GetPortUsesHat(port) ? "hat/D-Pad" : "axes")
+				: (js_config->use_hat == JOY_USE_HAT_YES ? "hat/D-Pad" : "axes");
+			if (js_config->use_hat == JOY_USE_HAT_AUTO)
+				snprintf(hat_suffix, sizeof(hat_suffix), "auto (%s)", src);
+			else
+				snprintf(hat_suffix, sizeof(hat_suffix), "%s", src);
+			menu_array[1].suffix = hat_suffix;
+		}
 		FindMenuItem(menu_array, 2)->suffix = js_config->axes == 0 ? "1&2" : "3&4";
 		{
 			static char suf[4][8];
@@ -3745,7 +3777,7 @@ static void PortConfiguration(int port)
 		FindMenuItem(menu_array, 7)->suffix =
 			js_config->diagonal_zones == JoystickNarrowDiagonalsZone ?
 				"Narrow" : (js_config->diagonal_zones == JoystickWideDiagonalsZone ? "Wide" : "None");
-		menu_array[1].flags = (menu_array[1].flags & ~UI_ITEM_TYPE) | (is_paddle ? UI_ITEM_HIDDEN : UI_ITEM_CHECK);
+		menu_array[1].flags = (menu_array[1].flags & ~UI_ITEM_TYPE) | (is_paddle ? UI_ITEM_HIDDEN : UI_ITEM_ACTION);
 		menu_array[2].flags = (menu_array[2].flags & ~UI_ITEM_TYPE) | (is_paddle ? UI_ITEM_HIDDEN : UI_ITEM_ACTION);
 		menu_array[3].flags = (menu_array[3].flags & ~UI_ITEM_TYPE) | (is_paddle ? UI_ITEM_ACTION : UI_ITEM_HIDDEN);
 		menu_array[4].flags = (menu_array[4].flags & ~UI_ITEM_TYPE) | (is_paddle ? UI_ITEM_ACTION : UI_ITEM_HIDDEN);
@@ -3760,20 +3792,25 @@ static void PortConfiguration(int port)
 			SDL_INPUT_SetPortMode(port, is_paddle ? JOY_MODE_HOST_JOY : JOY_MODE_PADDLE, SDL_INPUT_GetPortParam(port));
 			is_paddle = !is_paddle;
 			break;
-		case 1: js_config->use_hat = !js_config->use_hat; break;
+		case 1:
+			js_config->use_hat =
+				js_config->use_hat == JOY_USE_HAT_AUTO ? JOY_USE_HAT_NO :
+					(js_config->use_hat == JOY_USE_HAT_NO ? JOY_USE_HAT_YES : JOY_USE_HAT_AUTO);
+			break;
 		case 2: js_config->axes = js_config->axes ? 0 : 2; break;
 		case 3: potA = (potA + 1) % 8; SDL_INPUT_SetPortPaddleConfig(port, potA, potB, btnA, btnB); break;
 		case 4: potB = (potB + 1) % 8; SDL_INPUT_SetPortPaddleConfig(port, potA, potB, btnA, btnB); break;
 		case 5: btnA = (btnA + 1) % 16; SDL_INPUT_SetPortPaddleConfig(port, potA, potB, btnA, btnB); break;
 		case 6: btnB = (btnB + 1) % 16; SDL_INPUT_SetPortPaddleConfig(port, potA, potB, btnA, btnB); break;
-		case 7: js_config->diagonal_zones = (js_config->diagonal_zones + 1) % 3; break;
+		case 7: js_config->diagonal_zones = (js_config->diagonal_zones + 1) % 3;
+			js_config->diagonals_custom = 1; break;
 		case 8: JoystickButtonsConfiguration(js_config); break;
 		}
 	}
 #else
 	static UI_tMenuItem menu_array[] = {
 		UI_MENU_ACTION(0, " Mode:"),
-		UI_MENU_CHECK(1, "Use hat/D-PAD:"),
+		UI_MENU_ACTION(1, " Use:"),
 		UI_MENU_ACTION(2, " Paddle A axis:"),
 		UI_MENU_ACTION(3, " Paddle B axis:"),
 		UI_MENU_ACTION(4, " Paddle A fire:"),
@@ -3781,11 +3818,22 @@ static void PortConfiguration(int port)
 		UI_MENU_END
 	};
 
+	SDL_INPUT_GetPortPaddleConfig(port, &potA, &potB, &btnA, &btnB);
 	snprintf(title, sizeof(title), "Port %d configuration", port + 1);
 
 	for (;;) {
 		menu_array[0].suffix = is_paddle ? "Paddle" : "Joystick";
-		SetItemChecked(menu_array, 1, js_config->use_hat);
+		{
+			static char hat_suffix[20];
+			const char *src = js_config->use_hat == JOY_USE_HAT_AUTO
+				? (SDL_INPUT_GetPortUsesHat(port) ? "hat/D-Pad" : "axes")
+				: (js_config->use_hat == JOY_USE_HAT_YES ? "hat/D-Pad" : "axes");
+			if (js_config->use_hat == JOY_USE_HAT_AUTO)
+				snprintf(hat_suffix, sizeof(hat_suffix), "auto (%s)", src);
+			else
+				snprintf(hat_suffix, sizeof(hat_suffix), "%s", src);
+			menu_array[1].suffix = hat_suffix;
+		}
 		{
 			static char suf[4][8];
 			snprintf(suf[0], sizeof(suf[0]), "%d", potA);
@@ -3797,7 +3845,7 @@ static void PortConfiguration(int port)
 			menu_array[4].suffix = suf[2];
 			menu_array[5].suffix = suf[3];
 		}
-		menu_array[1].flags = (menu_array[1].flags & ~UI_ITEM_TYPE) | (is_paddle ? UI_ITEM_HIDDEN : UI_ITEM_CHECK);
+		menu_array[1].flags = (menu_array[1].flags & ~UI_ITEM_TYPE) | (is_paddle ? UI_ITEM_HIDDEN : UI_ITEM_ACTION);
 		option = UI_driver->fSelect(title, 0, option, menu_array, NULL);
 		if (option < 0) break;
 		switch (option) {
@@ -3805,7 +3853,11 @@ static void PortConfiguration(int port)
 			SDL_INPUT_SetPortMode(port, is_paddle ? JOY_MODE_HOST_JOY : JOY_MODE_PADDLE, SDL_INPUT_GetPortParam(port));
 			is_paddle = !is_paddle;
 			break;
-		case 1: js_config->use_hat = !js_config->use_hat; break;
+		case 1:
+			js_config->use_hat =
+				js_config->use_hat == JOY_USE_HAT_AUTO ? JOY_USE_HAT_NO :
+					(js_config->use_hat == JOY_USE_HAT_NO ? JOY_USE_HAT_YES : JOY_USE_HAT_AUTO);
+			break;
 		case 2: potA = (potA + 1) % 8; SDL_INPUT_SetPortPaddleConfig(port, potA, potB, btnA, btnB); break;
 		case 3: potB = (potB + 1) % 8; SDL_INPUT_SetPortPaddleConfig(port, potA, potB, btnA, btnB); break;
 		case 4: btnA = (btnA + 1) % 16; SDL_INPUT_SetPortPaddleConfig(port, potA, potB, btnA, btnB); break;
@@ -3813,6 +3865,82 @@ static void PortConfiguration(int port)
 		}
 	}
 #endif /* SDL2 */
+}
+#endif
+
+#ifdef GUI_SDL
+/* Fills in a single action item of a dynamically built menu.
+   A plain function, because ISO C90 has no compound literals. */
+static void SetActionMenuItem(UI_tMenuItem *item, int retval, const char *prefix, char *text)
+{
+	item->flags = UI_ITEM_ACTION;
+	item->retval = (SWORD) retval;
+	item->prefix = prefix;
+	item->item = text;
+	item->suffix = NULL;
+}
+
+static char special_keys[12][16];
+static const UI_tMenuItem special_keys_menu_array[] = {
+	UI_MENU_SUBMENU_SUFFIX(0, "open menu : ", special_keys[0]),
+	UI_MENU_SUBMENU_SUFFIX(1, "OPTION    : ", special_keys[1]),
+	UI_MENU_SUBMENU_SUFFIX(2, "SELECT    : ", special_keys[2]),
+	UI_MENU_SUBMENU_SUFFIX(3, "START     : ", special_keys[3]),
+	UI_MENU_SUBMENU_SUFFIX(4, "RESET     : ", special_keys[4]),
+	UI_MENU_SUBMENU_SUFFIX(5, "HELP      : ", special_keys[5]),
+	UI_MENU_SUBMENU_SUFFIX(6, "BREAK     : ", special_keys[6]),
+	UI_MENU_SUBMENU_SUFFIX(7, "monitor   : ", special_keys[7]),
+	UI_MENU_SUBMENU_SUFFIX(8, "quit      : ", special_keys[8]),
+	UI_MENU_SUBMENU_SUFFIX(9, "screenshot: ", special_keys[9]),
+	UI_MENU_SUBMENU_SUFFIX(10,"on-scr kbd: ", special_keys[10]),
+	UI_MENU_SUBMENU_SUFFIX(11,"turbo     : ", special_keys[11]),
+	UI_MENU_LABEL("\022\022\022\022\022\022\022\022\022\022\022\022\022\022\022\022\022\022\022\022\022\022\022"),
+	UI_MENU_ACTION(12, "Restore defaults"),
+	UI_MENU_END
+};
+/* Keys that must not be bound to special functions (menu navigation,
+   modifiers). */
+static int SpecialKeyRejected(int k)
+{
+	if (k == SDLK_ESCAPE || k == SDLK_RETURN || k == SDLK_TAB
+	    || k == SDLK_UP || k == SDLK_DOWN || k == SDLK_LEFT || k == SDLK_RIGHT)
+		return TRUE;
+#if SDL2
+	if (k == SDLK_LSHIFT || k == SDLK_RSHIFT || k == SDLK_LCTRL || k == SDLK_RCTRL
+	    || k == SDLK_LALT || k == SDLK_RALT || k == SDLK_LGUI || k == SDLK_RGUI
+	    || k == SDLK_MODE || k == SDLK_CAPSLOCK || k == SDLK_NUMLOCKCLEAR || k == SDLK_SCROLLLOCK)
+		return TRUE;
+#else
+	if ((k >= SDLK_NUMLOCK && k <= SDLK_MODE))
+		return TRUE;
+#endif
+	return FALSE;
+}
+
+static void SpecialKeysConfiguration(void)
+{
+	int option = 0;
+	for(;;) {
+		int i;
+		for(i = 0; i <= 11; i++)
+			PLATFORM_GetSpecialKeyName(i, special_keys[i], sizeof(special_keys[i]));
+		option = UI_driver->fSelect("Define special keys", UI_SELECT_POPUP, option, special_keys_menu_array, NULL);
+		if (option >= 0 && option <= 11) {
+			int k = GetRawKey();
+			if (!SpecialKeyRejected(k))
+				PLATFORM_SetSpecialKey(option, k);
+		}
+		else if (option == 12) {
+			static const int default_special_keys[12] = {
+				SDLK_F1, SDLK_F2, SDLK_F3, SDLK_F4, SDLK_F5, SDLK_F6,
+				SDLK_F7, SDLK_F8, SDLK_F9, SDLK_F10, SDLK_F11, SDLK_F12
+			};
+			for (i = 0; i < 12; i++)
+				PLATFORM_SetSpecialKey(i, default_special_keys[i]);
+		}
+		else
+			break;
+	}
 }
 #endif
 
@@ -3904,17 +4032,11 @@ static void ControllerConfiguration(void)
 						snprintf(port_suffix[p], sizeof(port_suffix[p]), "Parallel port %d", param + 1);
 						menu_array[5 + p * 2].suffix = port_suffix[p];
 						break;
-				case JOY_MODE_HOST_JOY: {
-					const char *jname = SDL_INPUT_GetHostJoystickDisplayName(param);
-					menu_array[5 + p * 2].suffix = jname ? jname : "?";
-					break;
-				}
-				case JOY_MODE_PADDLE: {
-					const char *jname = SDL_INPUT_GetHostJoystickDisplayName(param);
-					menu_array[5 + p * 2].suffix = jname ? jname : "?";
-					break;
-				}
-				default:
+					case JOY_MODE_HOST_JOY:
+					case JOY_MODE_PADDLE:
+						menu_array[5 + p * 2].suffix = SDL_INPUT_GetPortSourceName(p);
+						break;
+					default:
 						menu_array[5 + p * 2].suffix = "None";
 						break;
 					}
@@ -3977,18 +4099,20 @@ static void ControllerConfiguration(void)
 			int sel;
 #define PARALLEL_BASE 0x100
 #define HOSTJOY_BASE  0x200
+#ifdef __linux__
 			char lpt_label[2][32];
+#endif
 			UI_tMenuItem mode_menu[32];
 			int n_modes = 0;
-			mode_menu[n_modes++] = (UI_tMenuItem){ UI_ITEM_ACTION, JOY_MODE_NONE, "None", "", NULL };
-			mode_menu[n_modes++] = (UI_tMenuItem){ UI_ITEM_ACTION, JOY_MODE_KBD0, "Keyboard 1", "", NULL };
-			mode_menu[n_modes++] = (UI_tMenuItem){ UI_ITEM_ACTION, JOY_MODE_KBD1, "Keyboard 2", "", NULL };
+			SetActionMenuItem(&mode_menu[n_modes++], JOY_MODE_NONE, "None", "");
+			SetActionMenuItem(&mode_menu[n_modes++], JOY_MODE_KBD0, "Keyboard 1", "");
+			SetActionMenuItem(&mode_menu[n_modes++], JOY_MODE_KBD1, "Keyboard 2", "");
 #ifdef __linux__
 			{
 				int lpt;
 				for (lpt = 0; lpt < SDL_INPUT_GetNumLPTJoysticks() && lpt < 2; lpt++) {
 					snprintf(lpt_label[lpt], sizeof(lpt_label[lpt]), "Parallel port %d", lpt + 1);
-					mode_menu[n_modes++] = (UI_tMenuItem){ UI_ITEM_ACTION, PARALLEL_BASE + lpt, lpt_label[lpt], "", NULL };
+					SetActionMenuItem(&mode_menu[n_modes++], PARALLEL_BASE + lpt, lpt_label[lpt], "");
 				}
 			}
 #endif
@@ -3996,7 +4120,7 @@ static void ControllerConfiguration(void)
 				int j;
 				for (j = 0; j < SDL_INPUT_GetNumHostJoysticks() && j < 16; j++) {
 					const char *jname = SDL_INPUT_GetHostJoystickDisplayName(j);
-					mode_menu[n_modes++] = (UI_tMenuItem){ UI_ITEM_ACTION, HOSTJOY_BASE + j, NULL, (char *)(jname ? jname : "?"), NULL };
+					SetActionMenuItem(&mode_menu[n_modes++], HOSTJOY_BASE + j, NULL, (char *)(jname ? jname : "?"));
 				}
 			}
 			memset(&mode_menu[n_modes], 0, sizeof(UI_tMenuItem));
@@ -4362,7 +4486,9 @@ void UI_Run(void)
 		UI_MENU_FILESEL_ACCEL(UI_MENU_PCX, "PCX Screenshot (+Shift = interlaced)", "F10"),
 #endif
 #endif
+#ifndef DREAMCAST
 		UI_MENU_ACTION(UI_MENU_SAVE_CONFIG, "Save Configuration"),
+#endif
 		UI_MENU_ACTION_ACCEL(UI_MENU_BACK, "Back to Emulated Atari", "Esc"),
 		UI_MENU_ACTION_ACCEL(UI_MENU_RESETW, "Reset (Warm Start)", "F5"),
 		UI_MENU_ACTION_ACCEL(UI_MENU_RESETC, "Reboot (Cold Start)", "Shift+F5"),
@@ -4476,10 +4602,12 @@ void UI_Run(void)
 		case UI_MENU_PCXI:
 			Screenshot(TRUE);
 			break;
+#endif
+#endif
+#ifndef DREAMCAST
 		case UI_MENU_SAVE_CONFIG:
 			UI_driver->fMessage(CFG_WriteConfig() ? "Configuration file updated" : "Error writing configuration file", 1);
 			break;
-#endif
 #endif
 #ifndef USE_CURSES
 		case UI_MENU_CONTROLLER:

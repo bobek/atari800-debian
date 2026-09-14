@@ -1,4 +1,5 @@
-.TH ATARI800 1 "2026-07-26" "Atari800 7.1.2"
+'\" t
+.TH ATARI800 1 "2026-09-13" "Atari800 7.2.1"
 
 .SH NAME
 atari800 \- emulator of Atari 8-bit computers and the 5200 console
@@ -1236,18 +1237,6 @@ Deactivates showing output of an 80 column hardware.
 .B \-nojoystick
 Do not initialize SDL joysticks
 .TP
-.B \-joy0hat
-Use hat of joystick 0 rather than the axis for joystick movement.
-.TP
-.B \-joy1hat
-Use hat of joystick 1 rather than the axis for joystick movement.
-.TP
-.B \-joy2hat
-Use hat of joystick 2 rather than the axis for joystick movement.
-.TP
-.B \-joy3hat
-Use hat of joystick 3 rather than the axis for joystick movement.
-.TP
 .BI \-joy0\  path\-to\-device
 Define path to device used in LPTjoy 0. Available on linux-ia32 only.
 .TP
@@ -1423,6 +1412,9 @@ Save screenshot
 .TP
 .BR Shift + F10
 Save interlaced screenshot
+.TP
+.B F11
+On-screen keyboard (SDL builds with on-screen keyboard enabled)
 .TP
 .BR Alt + R
 Run Atari program
@@ -1831,8 +1823,8 @@ the \fB-compression-level 0\fR command line argument.
 Video Support:
 .TS
 tab(@), center, box;
-l | c | c | c c c
-l | c | c | cB cB cB.
+l | c | c | c2 c2 c
+l | c | c | cB2 cB2 cB.
 Application@Type@Platform@RLE@PNG@ZMBV
 _
 YouTube@Website@Browser@Yes@Yes@Yes
@@ -1867,9 +1859,9 @@ ZMBV codec (default compression level):
 tab(@), center, box;
 l | c | c s s s s
 c | c | _ _ _ _ _
-c | c | c c c c c
-l | c | c c c c c
-l | cB | cB cB cB cB cB.
+c | c | c2 c2 c2 c2 c
+l | c | c2 c2 c2 c2 c
+l | cB | cB2 cB2 cB2 cB2 cB.
 @Average@Estimated recording time
 Game@video@
 @frame@mp3@mp3@ADPCM@8-bit@16-bit
@@ -1890,9 +1882,9 @@ RLE codec:
 tab(@), center, box;
 l | c | c s s s s
 c | c | _ _ _ _ _
-c | c | c c c c c
-l | c | c c c c c
-l | cB | cB cB cB cB cB.
+c | c | c2 c2 c2 c2 c
+l | c | c2 c2 c2 c2 c
+l | cB | cB2 cB2 cB2 cB2 cB.
 @Average@Estimated recording time
 Game@video@
 @frame@mp3@mp3@ADPCM@8-bit@16-bit
@@ -1913,9 +1905,9 @@ PNG codec (default compression level):
 tab(@), center, box;
 l | c | c s s s s
 c | c | _ _ _ _ _
-c | c | c c c c c
-l | c | c c c c c
-l | cB | cB cB cB cB cB.
+c | c | c2 c2 c2 c2 c
+l | c | c2 c2 c2 c2 c
+l | cB | cB2 cB2 cB2 cB2 cB.
 @Average@Estimated recording time
 Game@video@
 @frame@mp3@mp3@ADPCM@8-bit@16-bit

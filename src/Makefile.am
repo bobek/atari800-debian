@@ -58,6 +58,7 @@ atari800_SOURCES = \
 	platform.h \
 	pcjoy.h \
 	akey.h \
+	acidtest.c acidtest.h \
 	afile.c afile.h \
 	antic.c antic.h \
 	atari.c atari.h \
@@ -69,7 +70,6 @@ atari800_SOURCES = \
 	cfg.c cfg.h \
 	cpu.c cpu.h \
 	crc32.c crc32.h \
-	download.c download.h \
 	devices.c devices.h \
 	esc.c esc.h \
 	gtia.c gtia.h \
@@ -266,6 +266,9 @@ else
 atari800_SOURCES += netsio.c netsio.h
 endif
 endif
+if WANT_DOWNLOAD
+atari800_SOURCES += download.c download.h
+endif
 if WANT_PBI_XLD
 if WITH_SOUND
 atari800_SOURCES += pbi_xld.c pbi_xld.h
@@ -322,6 +325,14 @@ ide.o: ide.c ide.h ide_internal.h
 
 .asm.o:
 	$(CCAS) $(CCASFLAGS) -o $@ $<
+
+# run the Acid800 test suite against the expected results ("make check");
+# delete test/acid800.expected and run again to record a new baseline
+check-local: atari800$(EXEEXT)
+	SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./atari800$(EXEEXT) \
+	  -config /dev/null -xl-rev altirra -nosound -nobasic -turbo \
+	  -acid800 $(top_srcdir)/test/acid800.expected \
+	  $(top_srcdir)/test/acid800.atr
 
 if CONFIGURE_HOST_JAVANVM
 $(TARGET_BASE_NAME).class: javanvm/$(TARGET_BASE_NAME).java | $(TARGET_BASE_NAME)_runtime.class

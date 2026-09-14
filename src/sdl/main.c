@@ -160,6 +160,14 @@ static BOOL CtrlHandler(DWORD fdwCtrlType)
 }
 #endif /* HAVE_WINDOWS_H */
 
+#ifdef USE_UI_BASIC_ONSCREEN_KEYBOARD
+/* Console key picked from the on-screen keyboard, held pressed for
+   OSK_CONSOL_FRAMES frames (same idea as the Dreamcast port's OVR_DELAY). */
+#define OSK_CONSOL_FRAMES 5
+static int osk_consol_mask = 0;
+static int osk_consol_delay = 0;
+#endif
+
 int main(int argc, char **argv)
 {
 #if HAVE_WINDOWS_H
@@ -186,16 +194,31 @@ int main(int argc, char **argv)
 	for (;;) {
 		INPUT_key_code = PLATFORM_Keyboard();
 #ifdef USE_UI_BASIC_ONSCREEN_KEYBOARD
+		if (osk_consol_delay > 0) {
+			/* Keep a console key picked from the on-screen keyboard
+			   pressed for whole frames; PLATFORM_Keyboard() recomputes
+			   INPUT_key_consol from the physical keyboard every call,
+			   which would otherwise erase the pick before the emulated
+			   machine sees it. */
+			INPUT_key_consol &= ~osk_consol_mask;
+			if (--osk_consol_delay == 0)
+				osk_consol_mask = 0;
+		}
 		if (INPUT_key_code == AKEY_KEYB) {
 			Sound_Pause();
 			UI_BASIC_in_kbui = TRUE;
-			INPUT_key_code = UI_BASIC_OnScreenKeyboard(NULL, 0);
+			INPUT_key_code = UI_BASIC_OnScreenKeyboard(NULL, Atari800_machine_type);
 			UI_BASIC_in_kbui = FALSE;
 			switch (INPUT_key_code) {
-				case AKEY_OPTION: INPUT_key_consol &= (~INPUT_CONSOL_OPTION); break;
-				case AKEY_SELECT: INPUT_key_consol &= (~INPUT_CONSOL_SELECT); break;
-				case AKEY_START: INPUT_key_consol &= (~INPUT_CONSOL_START); break;
+				case AKEY_OPTION: osk_consol_mask |= INPUT_CONSOL_OPTION; osk_consol_delay = OSK_CONSOL_FRAMES; break;
+				case AKEY_SELECT: osk_consol_mask |= INPUT_CONSOL_SELECT; osk_consol_delay = OSK_CONSOL_FRAMES; break;
+				case AKEY_START: osk_consol_mask |= INPUT_CONSOL_START; osk_consol_delay = OSK_CONSOL_FRAMES; break;
 			}
+
+			/* flush keypresses so the key used to confirm the
+			 * on-screen keyboard does not reach the emulator */
+			while (PLATFORM_Keyboard() != AKEY_NONE)
+				Atari800_Sync();
 
 			Sound_Continue();
 		}
