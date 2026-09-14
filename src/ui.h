@@ -56,6 +56,8 @@ extern int UI_show_hidden_files;
 #ifdef GUI_SDL
 void PLATFORM_SetJoystickKey(int joystick, int direction, int value);
 void PLATFORM_GetJoystickKeyName(int joystick, int direction, char *buffer, int bufsize);
+void PLATFORM_GetSpecialKeyName(int index, char *buffer, int bufsize);
+void PLATFORM_SetSpecialKey(int index, int sym);
 int GetRawKey(void);
 #endif
 

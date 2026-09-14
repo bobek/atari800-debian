@@ -362,10 +362,6 @@ SDL version options (SDL2 recommended; SDL1 lacks many features)
 -nojoystick           Do not initialize joysticks
 -joy0 </dev/lp0>      Define the device for LPTjoy
 -joy1 </dev/lp1>      --""-- only when LPTjoy support compiled in
--joy0hat              Use hat of joystick 0
--joy1hat              Use hat of joystick 1
--joy2hat              Use hat of joystick 2
--joy3hat              Use hat of joystick 3
 -kbdjoy0              Enable joystick 0 keyboard emulation
 -kbdjoy1              Enable joystick 1 keyboard emulation
 -no-kbdjoy0           Disable joystick 0 keyboard emulation
@@ -437,6 +433,7 @@ F8                   Enter monitor
 F9                   Exit emulator
 F10                  Save screenshot
 Shift+F10            Save interlaced screenshot
+F11                  On-screen keyboard
 F12                  Turbo mode
 Alt+R                Run Atari program
 Alt+D                Disk management

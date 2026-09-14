@@ -475,7 +475,7 @@ int PLATFORM_Initialise(int *argc, char *argv[])
 		/* create new graphics mode {336|384}x240 in 256 colors */
 		reprogram_VIDEL = TRUE;
 	} else {
-		short work_in[16], work_out[272];
+		short work_in[16], work_out[273];
 
 		/* GEM init */
 		gl_app_id = appl_init();
@@ -1480,8 +1480,7 @@ void PLATFORM_ConfigInit(void)
 	Sound_desired.sample_size = 1;
 	Sound_desired.channels = 2;
 	Sound_desired.buffer_ms = 40;
-	/* same as hardware buffer size */
-	Sound_latency = 40;
+	Sound_latency = 20;
 #endif
 }
 
