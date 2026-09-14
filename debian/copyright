@@ -1,13 +1,35 @@
-This is a Debian prepackaged version of the atari800 emulator.
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Atari800
+Upstream-Contact: Petr Stehlik <pstehlik@sophics.cz>
+Source: https://atari800.github.io/
+Comment: The Debian package was originally put together by Dale Scheetz
+ <dwarf@polaris.net>.
 
-This package was put together by Dale Scheetz <dwarf@polaris.net>, using
-sources from:
-	http://atari800.sourceforge.net/
+Files: *
+Copyright: 1995-1998 David Firth <david@signus.demon.co.uk>
+           1998-2026 Atari800 development team (see DOC/CREDITS)
+License: GPL-2+
 
-While atari800 is licensed under the GPLv2 it needs access to proprietary ROMs
-to be really useful. For this reason, it is placed in the contrib archive area.
+Files: debian/*
+Copyright: 1997-2000 Joey Hess <joeyh@debian.org>
+           2000-2003 Dale Scheetz <dwarf@polaris.net>
+           2004 Martin Albert <ma@debian.org>
+           2006-2026 Antonin Kral <A.Kral@sh.cvut.cz>
+License: GPL-2+
 
-Copyright:
-
-Copyright (C) 2011, Atari800 development team. Release under
-GPLv2 (see /usr/share/common-licenses/GPL-2)
+License: GPL-2+
+ This program is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see https://www.gnu.org/licenses/.
+ .
+ On Debian systems, the full text of the GNU General Public License
+ version 2 can be found in the file `/usr/share/common-licenses/GPL-2'.

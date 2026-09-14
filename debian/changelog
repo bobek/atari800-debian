@@ -1,3 +1,13 @@
+atari800 (7.2.1-1) unstable; urgency=medium
+
+  * New upstream version 7.2.1
+  * Build fixes for newer GCC, fixed default ncurses build
+  * More accurate POKEY/ANTIC emulation, SDL joystick handling overhaul,
+    on-screen keyboard improvements
+  * Convert debian/copyright to DEP-5 machine readable format
+
+ -- Antonin Kral <A.Kral@sh.cvut.cz>  Mon, 14 Sep 2026 08:06:34 +0200
+
 atari800 (7.1.2-2) unstable; urgency=medium
 
   * [4fd56c9] Drop, now useless, info about SDL from description
